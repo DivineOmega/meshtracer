@@ -60,10 +60,24 @@ Options:
 - `--webhook-api-token <token>`
   - Default: not set
   - Optional token sent in request headers when webhook is enabled
+- `--serve-map`
+  - Default: off
+  - Enables an embedded web server that serves a live map and JSON API
+- `--map-host <addr>`
+  - Default: `127.0.0.1`
+  - Bind address for the embedded map server
+- `--map-port <port>`
+  - Default: `8090`
+  - Listen port for the embedded map server (when `--serve-map` is enabled)
+- `--db-path <path>`
+  - Default: `meshtracer.db`
+  - SQLite file used for persisted nodes/traceroutes history
 
 ## Runtime Behavior
 
 - The script connects once at startup using `meshtastic.tcp_interface.TCPInterface`.
+- Node/traceroute history is persisted in SQLite and partitioned per connected mesh node (local node num/id, with host fallback) so each node keeps its own dataset.
+- Node updates are ingested in near-real-time via Meshtastic pubsub events (`meshtastic.receive` and `meshtastic.node.updated`), so newly-heard nodes appear without waiting for the next traceroute cycle.
 - Each cycle:
   - Picks one random node from `nodesByNum` heard in the last window.
   - Excludes local node from candidates.
@@ -71,6 +85,59 @@ Options:
   - Prints completion or timeout/failure.
   - Sleeps for remaining interval time.
 - If no eligible nodes are heard recently, it logs that and waits until next cycle.
+
+## Embedded Map
+
+When `--serve-map` is enabled, `meshtracer.py` also hosts:
+
+- `GET /` (or `/map`): browser UI map
+- `GET /api/map`: JSON snapshot of nodes, traces, and drawable edges
+- `GET /healthz`: basic health response
+
+Map data behavior:
+
+- Node markers are shown when node coordinates are known.
+- Marker labels use each node's `short_name` (with fallback when missing).
+- Marker colors indicate how recently each node was heard:
+  - Fresh (green): heard within 2 hours
+  - Mid (gray-blue): heard within 8 hours
+  - Stale (dark slate): older/unknown
+- Line segments are generated from completed traceroutes:
+  - `route_towards_destination` segments (orange)
+  - `route_back_to_origin` segments (blue)
+- Forward and return segments are offset slightly so overlapping paths are visually separated.
+- For nodes without GPS coordinates, map positions are estimated from traceroute order/adjacency when possible.
+- Traceroute-only unknown hop IDs are also synthesized into map nodes (short name = last 4 hex chars) and estimated the same way, so their surrounding segments can render.
+- Map/API data is loaded from SQLite history for the currently connected mesh-node partition.
+- The map includes a resizable/collapsible right sidebar with 3 tabs:
+  - `Log`: runtime lines mirrored from terminal output
+  - `Nodes`: known nodes list
+  - `Traces`: 50 most recent completed traceroutes
+- Interactions:
+  - Clicking a node marker on the map selects that node, switches to the `Nodes` tab, and highlights the matching node list item
+  - Clicking a node in `Nodes` highlights and pans/zooms to that node marker
+  - The `Nodes` tab includes:
+    - Live search filter by node short name and long name
+    - Sort selector: `Last heard` (default), `Short name`, or `Long name`
+  - Clicking a trace in `Traces` highlights that route edges and pans/zooms to its route area
+  - Selecting a trace or node opens a top-left details panel; use its `X` button to clear the selection
+
+## SQLite History
+
+- Database file: `--db-path` (default `meshtracer.db`)
+- Partition key: connected local Meshtastic node identity (`node:<num>[:<id>]`), with `host:<host>` fallback
+- Storage model:
+  - `nodes` table keyed by `(mesh_host, node_num)`
+  - `traceroutes` table keyed by `trace_id` with `mesh_host` column for partitioning
+- Result:
+  - Running against `192.168.68.52` and `192.168.68.53` stores separate traceroute histories in the same DB file
+  - Restarting the script keeps prior history (including map lines) for that same host
+
+Example map run:
+
+```bash
+python meshtracer.py <NODE_IP> --serve-map --map-host 0.0.0.0 --map-port 8090
+```
 
 ## Traceroute Wait Behavior
 
