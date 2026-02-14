@@ -72,6 +72,12 @@ Options:
 - `--db-path <path>`
   - Default: `meshtracer.db`
   - SQLite file used for persisted nodes/traceroutes history
+- `--max-map-traces <int>`
+  - Default: `800`
+  - Max number of completed traces included in `/api/map`
+- `--max-stored-traces <int>`
+  - Default: `50000`
+  - Max number of completed traces stored in SQLite per connected mesh-node partition (`0` disables pruning)
 
 ## Runtime Behavior
 
@@ -85,6 +91,18 @@ Options:
   - Prints completion or timeout/failure.
   - Sleeps for remaining interval time.
 - If no eligible nodes are heard recently, it logs that and waits until next cycle.
+
+## Project Layout
+
+- `meshtracer.py`: thin launcher entrypoint
+- `meshtracer_app/app.py`: main runtime loop and orchestration
+- `meshtracer_app/cli.py`: CLI argument parsing
+- `meshtracer_app/meshtastic_helpers.py`: Meshtastic-specific parsing and node helpers
+- `meshtracer_app/storage.py`: SQLite persistence layer
+- `meshtracer_app/state.py`: in-memory/runtime map state and log buffer
+- `meshtracer_app/map_server.py`: embedded map HTTP server and frontend template
+- `meshtracer_app/webhook.py`: webhook delivery helper
+- `tests/`: unit tests for core helpers and storage behavior
 
 ## Embedded Map
 
@@ -126,6 +144,7 @@ Map data behavior:
 
 - Database file: `--db-path` (default `meshtracer.db`)
 - Partition key: connected local Meshtastic node identity (`node:<num>[:<id>]`), with `host:<host>` fallback
+- Retention: `--max-stored-traces` keeps DB size bounded per partition
 - Storage model:
   - `nodes` table keyed by `(mesh_host, node_num)`
   - `traceroutes` table keyed by `trace_id` with `mesh_host` column for partitioning
@@ -137,6 +156,20 @@ Example map run:
 
 ```bash
 python meshtracer.py <NODE_IP> --serve-map --map-host 0.0.0.0 --map-port 8090
+```
+
+## Development Checks
+
+Run unit tests:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Validate syntax:
+
+```bash
+python -m py_compile meshtracer.py meshtracer_app/*.py
 ```
 
 ## Traceroute Wait Behavior
