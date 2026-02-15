@@ -28,6 +28,14 @@ Run with defaults:
 
 ```bash
 source .venv/bin/activate
+python meshtracer.py
+```
+
+This starts the web UI (default: `http://127.0.0.1:8090/`) and opens your browser. If you aren't connected yet, the onboarding screen will prompt you for your node IP/hostname and also shows any nodes auto-discovered on your LAN (best-effort scan).
+
+Optional: auto-connect on startup:
+
+```bash
 python meshtracer.py <NODE_IP>
 ```
 
@@ -36,12 +44,12 @@ Stop with `Ctrl+C`.
 ## CLI Reference
 
 ```bash
-python meshtracer.py <host> [options]
+python meshtracer.py [host] [options]
 ```
 
 Arguments:
 
-- `host` (required): IP address or hostname of your Meshtastic node
+- `host` (optional): IP address or hostname of your Meshtastic node (if omitted, connect from the web UI)
 
 Options:
 
@@ -61,14 +69,20 @@ Options:
   - Default: not set
   - Optional token sent in request headers when webhook is enabled
 - `--serve-map`
+  - Default: on
+  - Serve the embedded web UI (kept for backwards compatibility; it is now the default)
+- `--no-web`
   - Default: off
-  - Enables an embedded web server that serves a live map and JSON API
+  - Disable the web UI (run traceroutes in the terminal only)
+- `--no-open`
+  - Default: off
+  - Do not auto-open a browser when the web UI starts
 - `--map-host <addr>`
   - Default: `127.0.0.1`
   - Bind address for the embedded map server
 - `--map-port <port>`
   - Default: `8090`
-  - Listen port for the embedded map server (when `--serve-map` is enabled)
+  - Listen port for the embedded web UI
 - `--db-path <path>`
   - Default: `meshtracer.db`
   - SQLite file used for persisted nodes/traceroutes history
@@ -106,7 +120,7 @@ Options:
 
 ## Embedded Map
 
-When `--serve-map` is enabled, `meshtracer.py` also hosts:
+When the web UI is enabled (default), `meshtracer.py` hosts:
 
 - `GET /` (or `/map`): browser UI map
 - `GET /api/map`: JSON snapshot of nodes, traces, and drawable edges
@@ -155,7 +169,7 @@ Map data behavior:
 Example map run:
 
 ```bash
-python meshtracer.py <NODE_IP> --serve-map --map-host 0.0.0.0 --map-port 8090
+python meshtracer.py <NODE_IP> --map-host 0.0.0.0 --map-port 8090
 ```
 
 ## Development Checks

@@ -6,13 +6,18 @@ import argparse
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Connect to a Meshtastic node over TCP and run a traceroute every "
-            "interval minutes to a random node heard recently."
+            "Run the Meshtracer web UI (default) and optionally connect to a "
+            "Meshtastic node over TCP to continuously run traceroutes."
         )
     )
     parser.add_argument(
         "host",
-        help="IP address or hostname of your WiFi-connected Meshtastic node",
+        nargs="?",
+        default=None,
+        help=(
+            "Optional IP address or hostname of your WiFi-connected Meshtastic node. "
+            "If omitted, the web UI will prompt you to connect."
+        ),
     )
     parser.add_argument(
         "--interval",
@@ -44,8 +49,21 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--serve-map",
+        dest="web_ui",
         action="store_true",
-        help="Serve a live map UI and JSON API from this process.",
+        default=True,
+        help="Serve the web UI (default: on).",
+    )
+    parser.add_argument(
+        "--no-web",
+        dest="web_ui",
+        action="store_false",
+        help="Disable the web UI (run traceroutes in the terminal only).",
+    )
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Do not auto-open a browser when the web UI starts.",
     )
     parser.add_argument(
         "--map-host",
@@ -56,7 +74,7 @@ def parse_args() -> argparse.Namespace:
         "--map-port",
         type=int,
         default=8090,
-        help="Port for the map web server when --serve-map is enabled (default: 8090)",
+        help="Port for the web UI server (default: 8090)",
     )
     parser.add_argument(
         "--db-path",

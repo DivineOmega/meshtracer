@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from .common import utc_now
-from .state import MapState
 
 MAP_HTML = """<!doctype html>
 <html lang="en">
@@ -136,13 +136,277 @@ MAP_HTML = """<!doctype html>
       text-overflow: ellipsis;
       max-width: 160px;
     }
+    .mesh-host-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
     .mesh-host {
       color: #9cb0d6;
       font-size: 11px;
-      margin-bottom: 8px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      flex: 1;
+      min-width: 0;
+    }
+    .disconnect-btn {
+      border: 1px solid #2d4065;
+      border-radius: 10px;
+      background: rgba(18, 33, 69, 0.75);
+      color: #d9e4fb;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 6px 9px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .disconnect-btn:hover {
+      background: rgba(25, 48, 95, 0.85);
+    }
+    .onboarding {
+      position: fixed;
+      inset: 0;
+      z-index: 2500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background:
+        radial-gradient(1200px 800px at 20% 15%, rgba(81, 160, 255, 0.22), rgba(11, 16, 32, 0.92)),
+        radial-gradient(900px 700px at 85% 80%, rgba(111, 240, 176, 0.12), rgba(11, 16, 32, 0.92)),
+        rgba(11, 16, 32, 0.96);
+      box-sizing: border-box;
+    }
+    .onboarding.hidden {
+      display: none;
+    }
+    .onboarding-card {
+      width: min(720px, 100%);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(10, 18, 35, 0.88);
+      border-radius: 18px;
+      padding: 22px 22px 18px 22px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(4px);
+    }
+    .onboarding-brand {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #eef5ff;
+    }
+    .onboarding-tagline {
+      margin-top: 6px;
+      color: #b7c7e6;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .onboarding-form {
+      margin-top: 16px;
+    }
+    .onboarding-label {
+      display: block;
+      color: #9cb2da;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 7px;
+    }
+    .onboarding-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    #connectHost {
+      flex: 1;
+      min-width: 0;
+      box-sizing: border-box;
+      border: 1px solid #314a74;
+      background: #0d1832;
+      color: #d9e5fb;
+      border-radius: 12px;
+      padding: 11px 12px;
+      font-size: 14px;
+      outline: none;
+    }
+    #connectHost:focus {
+      border-color: #4d79ba;
+      box-shadow: 0 0 0 2px rgba(82, 137, 221, 0.24);
+    }
+    .connect-btn {
+      border: 1px solid #2d4065;
+      border-radius: 12px;
+      background: #122145;
+      color: #d9e4fb;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 11px 12px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .connect-btn:hover {
+      background: #19305f;
+    }
+    .connect-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .connect-error {
+      display: none;
+      border: 1px solid rgba(255, 85, 125, 0.42);
+      background: rgba(70, 15, 25, 0.55);
+      color: #ffd0dc;
+      border-radius: 12px;
+      padding: 9px 10px;
+      font-size: 12px;
+      margin-top: 10px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .connect-error.visible {
+      display: block;
+    }
+    .onboarding-help {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .onboarding-help code {
+      display: inline-block;
+      padding: 1px 7px;
+      margin-right: 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(36, 56, 88, 0.9);
+      background: rgba(15, 26, 51, 0.8);
+      color: #d8e3fb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    .connect-status {
+      margin-top: 12px;
+      color: #9cb0d6;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .discovery {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(39, 57, 87, 0.75);
+    }
+    .discovery-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .discovery-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #e7efff;
+    }
+    .discovery-meta {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+      margin-bottom: 8px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .discovery-list {
+      display: grid;
+      gap: 8px;
+    }
+    .discovery-rescan {
+      border: 1px solid rgba(45, 64, 101, 0.9);
+      border-radius: 10px;
+      background: rgba(16, 26, 52, 0.92);
+      color: #cfe0ff;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 6px 9px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .discovery-rescan:hover {
+      background: rgba(20, 35, 69, 0.98);
+    }
+    .discovery-rescan:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .discovery-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid rgba(36, 56, 88, 0.95);
+      background: rgba(15, 26, 51, 0.86);
+      border-radius: 14px;
+      padding: 10px 10px;
+    }
+    .discovery-item-main {
+      min-width: 0;
+    }
+    .discovery-item-host {
+      display: block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      font-weight: 800;
+      color: #eef5ff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .discovery-item-meta {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .discovery-item-btn {
+      border: 1px solid #2d4065;
+      border-radius: 12px;
+      background: rgba(18, 33, 69, 0.85);
+      color: #d9e4fb;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 8px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    .discovery-item-btn:hover {
+      background: rgba(25, 48, 95, 0.92);
+    }
+    .discovery-empty {
+      border: 1px dashed rgba(44, 64, 100, 0.9);
+      border-radius: 14px;
+      padding: 10px 10px;
+      color: #9fb0d1;
+      font-size: 12px;
+      background: rgba(13, 22, 44, 0.55);
+      text-align: left;
+      line-height: 1.35;
+    }
+    @media (max-width: 520px) {
+      .onboarding-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .connect-btn {
+        width: 100%;
+      }
     }
     .stats {
       display: grid;
@@ -522,6 +786,36 @@ MAP_HTML = """<!doctype html>
 </head>
 <body>
   <div id="map"></div>
+  <section id="onboarding" class="onboarding hidden" aria-label="Connect to Meshtastic node">
+    <div class="onboarding-card">
+      <div class="onboarding-brand">Meshtracer</div>
+      <div class="onboarding-tagline">
+        Enter the IP address or hostname of your WiFi-connected Meshtastic node to start tracing and populating the map.
+      </div>
+      <div class="onboarding-form">
+        <label class="onboarding-label" for="connectHost">Node IP or hostname</label>
+        <div class="onboarding-row">
+          <input id="connectHost" type="text" inputmode="decimal" placeholder="192.168.1.50" autocomplete="off" spellcheck="false">
+          <button id="connectBtn" class="connect-btn" type="button">Connect</button>
+        </div>
+        <div id="connectError" class="connect-error"></div>
+        <div class="onboarding-help">
+          Examples:
+          <code>192.168.1.50</code>
+          <code>meshtastic.local</code>
+        </div>
+        <div id="connectStatus" class="connect-status"></div>
+        <div id="discoverySection" class="discovery">
+          <div class="discovery-head">
+            <div class="discovery-title">Discovered Nodes</div>
+            <button id="discoveryRescan" class="discovery-rescan" type="button">Rescan</button>
+          </div>
+          <div id="discoveryMeta" class="discovery-meta"></div>
+          <div id="discoveryList" class="discovery-list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
   <section id="traceDetails" class="hidden" aria-live="polite">
     <div class="trace-head">
       <div id="traceDetailsTitle" class="trace-title">Details</div>
@@ -539,7 +833,10 @@ MAP_HTML = """<!doctype html>
           <div class="head-title">Meshtracer</div>
           <div id="updated" class="head-updated">-</div>
         </div>
-        <div id="meshHost" class="mesh-host">-</div>
+        <div class="mesh-host-row">
+          <div id="meshHost" class="mesh-host">-</div>
+          <button id="disconnectBtn" class="disconnect-btn" type="button" style="display:none">Disconnect</button>
+        </div>
         <div class="stats">
           <div class="stat"><span class="stat-k">Nodes</span><span id="nodeCount" class="stat-v">0</span></div>
           <div class="stat"><span class="stat-k">Traces</span><span id="traceCount" class="stat-v">0</span></div>
@@ -609,6 +906,16 @@ MAP_HTML = """<!doctype html>
     const nodeSortSelect = document.getElementById("nodeSort");
     const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
     const tabPanels = Array.from(document.querySelectorAll(".panel"));
+    const onboarding = document.getElementById("onboarding");
+    const connectHostInput = document.getElementById("connectHost");
+    const connectBtn = document.getElementById("connectBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+    const connectError = document.getElementById("connectError");
+    const connectStatus = document.getElementById("connectStatus");
+    const discoverySection = document.getElementById("discoverySection");
+    const discoveryRescan = document.getElementById("discoveryRescan");
+    const discoveryMeta = document.getElementById("discoveryMeta");
+    const discoveryList = document.getElementById("discoveryList");
 
     const state = {
       fitted: false,
@@ -623,6 +930,7 @@ MAP_HTML = """<!doctype html>
       activeTab: "log",
       nodeSearchQuery: "",
       nodeSortMode: "last_heard",
+      promptedConnect: false,
     };
     const ROUTE_COLORS = {
       towards: "#f59e0b",
@@ -1514,7 +1822,7 @@ MAP_HTML = """<!doctype html>
       };
       state.lastData = viewData;
 
-      document.getElementById("meshHost").textContent = data.mesh_host || "-";
+      updateConnectionUi(data);
       document.getElementById("nodeCount").textContent = String(data.node_count || 0);
       document.getElementById("traceCount").textContent = String(data.trace_count || 0);
       document.getElementById("edgeCount").textContent = String(drawnEdgeCount);
@@ -1532,6 +1840,216 @@ MAP_HTML = """<!doctype html>
         state.fitted = true;
       }
     }
+
+    function updateConnectionUi(data) {
+      const connected = Boolean(data && data.connected);
+      const connState = String((data && data.connection_state) || "");
+      const host = (data && data.connected_host) ? String(data.connected_host) : "";
+      const partition = (data && data.mesh_host) ? String(data.mesh_host) : "";
+      const error = (data && data.connection_error) ? String(data.connection_error) : "";
+
+      let label = "Not connected";
+      if (connected) {
+        label = host ? `Connected to ${host}` : "Connected";
+      } else if (connState === "connecting") {
+        label = host ? `Connecting to ${host}...` : "Connecting...";
+      } else if (connState === "error") {
+        label = "Connection error";
+      }
+      if (partition && partition !== "-" && partition !== "disconnected") {
+        label += ` (${partition})`;
+      }
+      document.getElementById("meshHost").textContent = label;
+
+      onboarding.classList.toggle("hidden", connected);
+      disconnectBtn.style.display = connected ? "inline-block" : "none";
+
+      const isConnecting = connState === "connecting";
+      connectBtn.disabled = isConnecting;
+      connectHostInput.disabled = isConnecting;
+      connectBtn.textContent = isConnecting ? "Connecting..." : "Connect";
+
+      if (!connected && error) {
+        connectError.textContent = error;
+        connectError.classList.add("visible");
+      } else {
+        connectError.textContent = "";
+        connectError.classList.remove("visible");
+      }
+
+      renderDiscovery(data && data.discovery);
+
+      if (connected) {
+        connectStatus.textContent = "";
+        state.promptedConnect = false;
+        return;
+      }
+
+      if (isConnecting) {
+        connectStatus.textContent = host ? `Connecting to ${host}...` : "Connecting...";
+      } else {
+        connectStatus.textContent = "Meshtracer runs locally and connects to your node over TCP on your LAN.";
+      }
+
+      if (!connected && !state.promptedConnect) {
+        state.promptedConnect = true;
+        try {
+          connectHostInput.focus();
+          connectHostInput.select();
+        } catch (_e) {
+        }
+      }
+    }
+
+    function renderDiscovery(discovery) {
+      if (!discoverySection || !discoveryMeta || !discoveryList || !discoveryRescan) return;
+
+      const enabled = Boolean(discovery && discovery.enabled);
+      const scanning = Boolean(discovery && discovery.scanning);
+      const networks = Array.isArray(discovery && discovery.networks) ? discovery.networks : [];
+      const port = Number((discovery && discovery.port) || 4403);
+      const candidates = Array.isArray(discovery && discovery.candidates) ? discovery.candidates : [];
+      const done = Number((discovery && discovery.progress_done) || 0);
+      const total = Number((discovery && discovery.progress_total) || 0);
+      const lastScanUtc = String((discovery && discovery.last_scan_utc) || "");
+
+      discoveryRescan.disabled = !enabled || scanning;
+
+      if (!enabled) {
+        discoveryMeta.textContent = "Auto-discovery is disabled.";
+        discoveryList.innerHTML = '<div class="discovery-empty">Enter a node IP/hostname above, or start Meshtracer with discovery enabled.</div>';
+        return;
+      }
+
+      const metaParts = [];
+      if (scanning) {
+        metaParts.push(total > 0 ? `Scanning ${done}/${total}...` : "Scanning...");
+      } else if (lastScanUtc) {
+        metaParts.push(`Last scan: ${lastScanUtc}`);
+      }
+      if (networks.length) metaParts.push(`Networks: ${networks.join(", ")}`);
+      if (Number.isFinite(port) && port > 0) metaParts.push(`Port: ${port}`);
+      discoveryMeta.textContent = metaParts.join(" | ") || "Searching your LAN...";
+
+      if (!candidates.length) {
+        const hint = scanning
+          ? "No nodes found yet."
+          : "No nodes found. Make sure your computer and node are on the same network, and that the node's TCP interface is reachable.";
+        discoveryList.innerHTML = `<div class="discovery-empty">${escapeHtml(hint)}</div>`;
+        return;
+      }
+
+      discoveryList.innerHTML = candidates.map((item) => {
+        const host = String((item && item.host) || "").trim();
+        if (!host) return "";
+        const itemPort = Number((item && item.port) || port);
+        const latency = item && item.latency_ms !== undefined && item.latency_ms !== null
+          ? `${item.latency_ms}ms`
+          : "";
+        const seen = item && item.last_seen_utc ? `seen ${item.last_seen_utc}` : "";
+        const meta = [seen, latency].filter(Boolean).join(" | ") || "reachable";
+        return `
+          <div class="discovery-item">
+            <div class="discovery-item-main">
+              <span class="discovery-item-host">${escapeHtml(host)}${itemPort ? ":" + escapeHtml(itemPort) : ""}</span>
+              <span class="discovery-item-meta">${escapeHtml(meta)}</span>
+            </div>
+            <button class="discovery-item-btn" type="button" data-host="${escapeHtml(host)}">Connect</button>
+          </div>
+        `;
+      }).join("");
+
+      for (const btn of discoveryList.querySelectorAll("button[data-host]")) {
+        btn.addEventListener("click", () => {
+          const host = String(btn.dataset.host || "").trim();
+          if (!host) return;
+          connectToHost(host);
+        });
+      }
+    }
+
+    async function apiPost(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+      });
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (_e) {
+      }
+      return { ok: response.ok, status: response.status, body };
+    }
+
+    async function connectToHost(hostOverride) {
+      const host = String((hostOverride !== undefined ? hostOverride : connectHostInput.value) || "").trim();
+      if (!host) {
+        connectError.textContent = "Enter a node IP or hostname.";
+        connectError.classList.add("visible");
+        return;
+      }
+      if (hostOverride !== undefined) {
+        connectHostInput.value = host;
+      }
+      try {
+        localStorage.setItem("meshtracer.lastHost", host);
+      } catch (_e) {
+      }
+      connectError.textContent = "";
+      connectError.classList.remove("visible");
+      connectBtn.disabled = true;
+      connectHostInput.disabled = true;
+      try {
+        const { ok, body } = await apiPost("/api/connect", { host });
+        if (!ok) {
+          const detail = body && (body.detail || body.error) ? String(body.detail || body.error) : "connect failed";
+          connectError.textContent = detail;
+          connectError.classList.add("visible");
+        }
+      } catch (e) {
+        connectError.textContent = String(e || "connect failed");
+        connectError.classList.add("visible");
+      } finally {
+        connectBtn.disabled = false;
+        connectHostInput.disabled = false;
+      }
+      refresh();
+    }
+
+    async function disconnectFromHost() {
+      try {
+        await apiPost("/api/disconnect", {});
+      } catch (_e) {
+      }
+      refresh();
+    }
+
+    async function rescanDiscovery() {
+      discoveryRescan.disabled = true;
+      try {
+        await apiPost("/api/discovery/rescan", {});
+      } catch (_e) {
+      }
+      refresh();
+    }
+
+    try {
+      const savedHost = localStorage.getItem("meshtracer.lastHost");
+      if (savedHost && !connectHostInput.value) {
+        connectHostInput.value = String(savedHost);
+      }
+    } catch (_e) {
+    }
+
+    connectBtn.addEventListener("click", () => connectToHost());
+    disconnectBtn.addEventListener("click", () => disconnectFromHost());
+    discoveryRescan.addEventListener("click", () => rescanDiscovery());
+    connectHostInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        connectToHost();
+      }
+    });
 
     async function refresh() {
       try {
@@ -1551,10 +2069,37 @@ MAP_HTML = """<!doctype html>
 """
 
 
-def start_map_server(state: MapState, host: str, port: int) -> ThreadingHTTPServer:
+def start_map_server(
+    snapshot: Callable[[], dict[str, Any]],
+    connect: Callable[[str], tuple[bool, str]],
+    disconnect: Callable[[], tuple[bool, str]],
+    rescan_discovery: Callable[[], tuple[bool, str]],
+    host: str,
+    port: int,
+) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:
             return
+
+        def _read_json_body(self) -> tuple[dict[str, Any] | None, str | None]:
+            length_raw = self.headers.get("Content-Length", "0")
+            try:
+                length = int(length_raw) if length_raw else 0
+            except (TypeError, ValueError):
+                length = 0
+            if length <= 0:
+                return None, "missing_body"
+            try:
+                raw = self.rfile.read(length)
+            except Exception:
+                return None, "read_failed"
+            try:
+                value = json.loads(raw.decode("utf-8", errors="replace"))
+            except json.JSONDecodeError:
+                return None, "invalid_json"
+            if not isinstance(value, dict):
+                return None, "expected_object"
+            return value, None
 
         def _send_json(self, payload: dict[str, Any], status: int = 200) -> None:
             body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
@@ -1578,10 +2123,38 @@ def start_map_server(state: MapState, host: str, port: int) -> ThreadingHTTPServ
                 self._send_html(MAP_HTML)
                 return
             if path == "/api/map":
-                self._send_json(state.snapshot())
+                self._send_json(snapshot())
                 return
             if path == "/healthz":
                 self._send_json({"ok": True, "at_utc": utc_now()})
+                return
+            self._send_json({"error": "not_found"}, status=404)
+
+        def do_POST(self) -> None:
+            path = self.path.split("?", 1)[0]
+            if path == "/api/connect":
+                body, err = self._read_json_body()
+                if err is not None or body is None:
+                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                    return
+                host_value = body.get("host")
+                host = str(host_value or "").strip()
+                if not host:
+                    self._send_json({"ok": False, "error": "missing_host"}, status=400)
+                    return
+                ok, detail = connect(host)
+                status = 200 if ok else 500
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
+            if path == "/api/disconnect":
+                ok, detail = disconnect()
+                status = 200 if ok else 500
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
+            if path == "/api/discovery/rescan":
+                ok, detail = rescan_discovery()
+                status = 200 if ok else 500
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
                 return
             self._send_json({"error": "not_found"}, status=404)
 
