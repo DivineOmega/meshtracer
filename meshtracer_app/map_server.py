@@ -456,7 +456,7 @@ MAP_HTML = """<!doctype html>
 
     #tabs {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 6px;
       padding: 8px 12px 8px 12px;
       border-bottom: 1px solid #273957;
@@ -566,6 +566,221 @@ MAP_HTML = """<!doctype html>
     #nodeSort:focus {
       border-color: #4d79ba;
       box-shadow: 0 0 0 2px rgba(82, 137, 221, 0.24);
+    }
+    .cfg-section {
+      border: 1px solid #263a5e;
+      background: rgba(13, 22, 44, 0.55);
+      border-radius: 12px;
+      padding: 10px 10px 10px 10px;
+      margin-bottom: 10px;
+    }
+    .cfg-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #e7efff;
+      margin-bottom: 8px;
+    }
+    .cfg-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .cfg-field {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+    .cfg-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .cfg-label {
+      color: #9cb2da;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .cfg-help {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      border: 1px solid rgba(45, 64, 101, 0.92);
+      background: rgba(16, 26, 52, 0.92);
+      color: #cfe0ff;
+      font-weight: 900;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    .cfg-help:hover {
+      background: rgba(20, 35, 69, 0.98);
+    }
+    .cfg-input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #314a74;
+      background: #0d1832;
+      color: #d9e5fb;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 12px;
+      outline: none;
+    }
+    .cfg-input:focus {
+      border-color: #4d79ba;
+      box-shadow: 0 0 0 2px rgba(82, 137, 221, 0.24);
+    }
+    .cfg-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .cfg-btn {
+      border: 1px solid #2d4065;
+      border-radius: 10px;
+      background: #122145;
+      color: #d9e4fb;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 8px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .cfg-btn:hover {
+      background: #19305f;
+    }
+    .cfg-btn.secondary {
+      background: rgba(16, 26, 52, 0.92);
+      color: #cfe0ff;
+    }
+    .cfg-btn.secondary:hover {
+      background: rgba(20, 35, 69, 0.98);
+    }
+    .cfg-status {
+      margin-top: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(10, 18, 35, 0.55);
+      color: #c9d7f3;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+      display: none;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .cfg-status.visible {
+      display: block;
+    }
+    .cfg-status.error {
+      border-color: rgba(255, 85, 125, 0.42);
+      background: rgba(70, 15, 25, 0.55);
+      color: #ffd0dc;
+    }
+    .cfg-readonly {
+      margin-top: 10px;
+      border: 1px dashed rgba(44, 64, 100, 0.9);
+      border-radius: 12px;
+      padding: 10px 10px;
+      color: #9fb0d1;
+      font-size: 12px;
+      background: rgba(13, 22, 44, 0.55);
+      line-height: 1.35;
+    }
+    .cfg-readonly code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #d8e3fb;
+    }
+    .help-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 2600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .help-modal.hidden {
+      display: none;
+    }
+    .help-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(7, 10, 18, 0.62);
+      backdrop-filter: blur(2px);
+    }
+    .help-card {
+      position: relative;
+      width: min(520px, 100%);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(10, 18, 35, 0.92);
+      border-radius: 16px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+      padding: 14px 14px 12px 14px;
+      backdrop-filter: blur(4px);
+    }
+    .help-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .help-title {
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #eef5ff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .help-close {
+      width: 26px;
+      height: 26px;
+      border: 1px solid #2d4065;
+      border-radius: 10px;
+      background: rgba(16, 26, 52, 0.92);
+      color: #cfe0ff;
+      font-weight: 900;
+      cursor: pointer;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+    .help-close:hover {
+      background: rgba(20, 35, 69, 0.98);
+    }
+    .help-body {
+      color: #c9d7f3;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .client-error {
+      display: none;
+      margin-top: 8px;
+      border: 1px solid rgba(255, 85, 125, 0.42);
+      background: rgba(70, 15, 25, 0.55);
+      color: #ffd0dc;
+      border-radius: 12px;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .client-error.visible {
+      display: block;
     }
     #nodeList {
       height: auto;
@@ -837,6 +1052,7 @@ MAP_HTML = """<!doctype html>
           <div id="meshHost" class="mesh-host">-</div>
           <button id="disconnectBtn" class="disconnect-btn" type="button" style="display:none">Disconnect</button>
         </div>
+        <div id="clientError" class="client-error"></div>
         <div class="stats">
           <div class="stat"><span class="stat-k">Nodes</span><span id="nodeCount" class="stat-v">0</span></div>
           <div class="stat"><span class="stat-k">Traces</span><span id="traceCount" class="stat-v">0</span></div>
@@ -853,6 +1069,7 @@ MAP_HTML = """<!doctype html>
         <button type="button" class="tab-btn active" data-tab="log">Log</button>
         <button type="button" class="tab-btn" data-tab="nodes">Nodes</button>
         <button type="button" class="tab-btn" data-tab="traces">Traces</button>
+        <button type="button" class="tab-btn" data-tab="config">Config</button>
       </div>
 
       <div id="panels">
@@ -880,9 +1097,99 @@ MAP_HTML = """<!doctype html>
         <section class="panel" data-panel="traces">
           <div id="traceList" class="scroll-list"></div>
         </section>
+        <section class="panel" data-panel="config">
+          <div class="scroll-list">
+            <div class="cfg-section">
+              <div class="cfg-title">Traceroute</div>
+              <div class="cfg-grid">
+                <div class="cfg-field">
+                  <div class="cfg-label-row">
+                    <label class="cfg-label" for="cfgInterval">Interval (minutes)</label>
+                    <button type="button" class="cfg-help" data-help="interval" aria-label="Help for interval">?</button>
+                  </div>
+                  <input id="cfgInterval" class="cfg-input" type="number" min="1" step="1">
+                </div>
+                <div class="cfg-field">
+                  <div class="cfg-label-row">
+                    <label class="cfg-label" for="cfgHeardWindow">Heard Window (minutes)</label>
+                    <button type="button" class="cfg-help" data-help="heard_window" aria-label="Help for heard window">?</button>
+                  </div>
+                  <input id="cfgHeardWindow" class="cfg-input" type="number" min="1" step="1">
+                </div>
+                <div class="cfg-field">
+                  <div class="cfg-label-row">
+                    <label class="cfg-label" for="cfgHopLimit">Hop Limit</label>
+                    <button type="button" class="cfg-help" data-help="hop_limit" aria-label="Help for hop limit">?</button>
+                  </div>
+                  <input id="cfgHopLimit" class="cfg-input" type="number" min="1" step="1">
+                </div>
+              </div>
+            </div>
+            <div class="cfg-section">
+              <div class="cfg-title">Storage</div>
+              <div class="cfg-grid">
+                <div class="cfg-field">
+                  <div class="cfg-label-row">
+                    <label class="cfg-label" for="cfgMaxMapTraces">Max Map Traces</label>
+                    <button type="button" class="cfg-help" data-help="max_map_traces" aria-label="Help for max map traces">?</button>
+                  </div>
+                  <input id="cfgMaxMapTraces" class="cfg-input" type="number" min="1" step="1">
+                </div>
+                <div class="cfg-field">
+                  <div class="cfg-label-row">
+                    <label class="cfg-label" for="cfgMaxStoredTraces">Max Stored Traces (0 disables pruning)</label>
+                    <button type="button" class="cfg-help" data-help="max_stored_traces" aria-label="Help for max stored traces">?</button>
+                  </div>
+                  <input id="cfgMaxStoredTraces" class="cfg-input" type="number" min="0" step="1">
+                </div>
+              </div>
+            </div>
+            <div class="cfg-section">
+              <div class="cfg-title">Webhook</div>
+              <div class="cfg-grid">
+                <div class="cfg-field">
+                  <div class="cfg-label-row">
+                    <label class="cfg-label" for="cfgWebhookUrl">Webhook URL</label>
+                    <button type="button" class="cfg-help" data-help="webhook_url" aria-label="Help for webhook url">?</button>
+                  </div>
+                  <input id="cfgWebhookUrl" class="cfg-input" type="text" placeholder="https://example.com/hook">
+                </div>
+                <div class="cfg-field">
+                  <div class="cfg-label-row">
+                    <label class="cfg-label" for="cfgWebhookToken">Webhook API Token</label>
+                    <button type="button" class="cfg-help" data-help="webhook_api_token" aria-label="Help for webhook api token">?</button>
+                  </div>
+                  <input id="cfgWebhookToken" class="cfg-input" type="password" placeholder="(optional)">
+                </div>
+              </div>
+            </div>
+
+            <div class="cfg-actions">
+              <button id="cfgApply" class="cfg-btn" type="button">Apply</button>
+              <button id="cfgReset" class="cfg-btn secondary" type="button">Reset</button>
+            </div>
+            <div id="cfgStatus" class="cfg-status"></div>
+            <div class="cfg-readonly">
+              <div>Server settings are controlled by CLI args and require restart.</div>
+              <div>DB: <code id="cfgDbPath">-</code></div>
+              <div>UI bind: <code id="cfgUiBind">-</code></div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </aside>
+
+  <section id="helpModal" class="help-modal hidden" aria-label="Help" role="dialog" aria-modal="true">
+    <div id="helpOverlay" class="help-overlay" aria-hidden="true"></div>
+    <div class="help-card" role="document">
+      <div class="help-head">
+        <div id="helpTitle" class="help-title">Help</div>
+        <button id="helpClose" class="help-close" type="button" aria-label="Close help">X</button>
+      </div>
+      <div id="helpBody" class="help-body"></div>
+    </div>
+  </section>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -916,6 +1223,24 @@ MAP_HTML = """<!doctype html>
     const discoveryRescan = document.getElementById("discoveryRescan");
     const discoveryMeta = document.getElementById("discoveryMeta");
     const discoveryList = document.getElementById("discoveryList");
+    const cfgInterval = document.getElementById("cfgInterval");
+    const cfgHeardWindow = document.getElementById("cfgHeardWindow");
+    const cfgHopLimit = document.getElementById("cfgHopLimit");
+    const cfgMaxMapTraces = document.getElementById("cfgMaxMapTraces");
+    const cfgMaxStoredTraces = document.getElementById("cfgMaxStoredTraces");
+    const cfgWebhookUrl = document.getElementById("cfgWebhookUrl");
+    const cfgWebhookToken = document.getElementById("cfgWebhookToken");
+    const cfgApply = document.getElementById("cfgApply");
+    const cfgReset = document.getElementById("cfgReset");
+    const cfgStatus = document.getElementById("cfgStatus");
+    const cfgDbPath = document.getElementById("cfgDbPath");
+    const cfgUiBind = document.getElementById("cfgUiBind");
+    const helpModal = document.getElementById("helpModal");
+    const helpOverlay = document.getElementById("helpOverlay");
+    const helpClose = document.getElementById("helpClose");
+    const helpTitle = document.getElementById("helpTitle");
+    const helpBody = document.getElementById("helpBody");
+    const clientError = document.getElementById("clientError");
 
     const state = {
       fitted: false,
@@ -931,7 +1256,34 @@ MAP_HTML = """<!doctype html>
       nodeSearchQuery: "",
       nodeSortMode: "last_heard",
       promptedConnect: false,
+      configLoaded: false,
+      configDirty: false,
+      configDefaults: null,
     };
+
+    function reportClientError(message, options = {}) {
+      const text = String(message || "").trim();
+      if (!text) return;
+      const prefix = options.prefix ? String(options.prefix) : "UI error";
+      const line = `${prefix}: ${text}`;
+      try {
+        console.error(line);
+      } catch (_e) {
+      }
+      if (!clientError) return;
+      clientError.textContent = line;
+      clientError.classList.add("visible");
+    }
+
+    window.addEventListener("error", (event) => {
+      const msg = event && (event.message || (event.error && event.error.message)) ? String(event.message || event.error.message) : "unknown error";
+      reportClientError(msg, { prefix: "UI error" });
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      const reason = event && event.reason ? event.reason : null;
+      const msg = reason && reason.message ? String(reason.message) : String(reason || "unhandled promise rejection");
+      reportClientError(msg, { prefix: "UI error" });
+    });
     const ROUTE_COLORS = {
       towards: "#f59e0b",
       back: "#3b82f6",
@@ -1823,6 +2175,7 @@ MAP_HTML = """<!doctype html>
       state.lastData = viewData;
 
       updateConnectionUi(data);
+      updateConfigUi(data);
       document.getElementById("nodeCount").textContent = String(data.node_count || 0);
       document.getElementById("traceCount").textContent = String(data.trace_count || 0);
       document.getElementById("edgeCount").textContent = String(drawnEdgeCount);
@@ -1968,6 +2321,54 @@ MAP_HTML = """<!doctype html>
       }
     }
 
+    function setCfgStatus(message, options = {}) {
+      const isError = Boolean(options.error);
+      const text = String(message || "").trim();
+      if (!cfgStatus) return;
+      cfgStatus.textContent = text;
+      cfgStatus.classList.toggle("visible", Boolean(text));
+      cfgStatus.classList.toggle("error", isError);
+    }
+
+    function markConfigDirty() {
+      state.configDirty = true;
+      setCfgStatus("Unsaved changes.", { error: false });
+    }
+
+    function applyConfigToForm(config) {
+      if (!config) return;
+      if (cfgInterval) cfgInterval.value = String(config.interval ?? "");
+      if (cfgHeardWindow) cfgHeardWindow.value = String(config.heard_window ?? "");
+      if (cfgHopLimit) cfgHopLimit.value = String(config.hop_limit ?? "");
+      if (cfgMaxMapTraces) cfgMaxMapTraces.value = String(config.max_map_traces ?? "");
+      if (cfgMaxStoredTraces) cfgMaxStoredTraces.value = String(config.max_stored_traces ?? "");
+      if (cfgWebhookUrl) cfgWebhookUrl.value = String(config.webhook_url ?? "");
+      if (cfgWebhookToken) cfgWebhookToken.value = String(config.webhook_api_token ?? "");
+    }
+
+    function updateConfigUi(data) {
+      const config = data && typeof data.config === "object" ? data.config : null;
+      const defaults = data && typeof data.config_defaults === "object" ? data.config_defaults : null;
+      const server = data && typeof data.server === "object" ? data.server : null;
+
+      if (defaults && !state.configDefaults) {
+        state.configDefaults = defaults;
+      }
+      if (server) {
+        if (cfgDbPath) cfgDbPath.textContent = String(server.db_path || "-");
+        if (cfgUiBind) cfgUiBind.textContent = `${String(server.map_host || "-")}:${String(server.map_port || "-")}`;
+      }
+
+      if (!config) return;
+      if (!state.configLoaded || !state.configDirty) {
+        applyConfigToForm(config);
+        state.configLoaded = true;
+        if (!state.configDirty) {
+          setCfgStatus("", { error: false });
+        }
+      }
+    }
+
     async function apiPost(path, payload) {
       const response = await fetch(path, {
         method: "POST",
@@ -1980,6 +2381,123 @@ MAP_HTML = """<!doctype html>
       } catch (_e) {
       }
       return { ok: response.ok, status: response.status, body };
+    }
+
+    async function applyConfig() {
+      function asInt(value, fallback) {
+        const n = Number(String(value || "").trim());
+        if (!Number.isFinite(n)) return fallback;
+        return Math.trunc(n);
+      }
+
+      const payload = {
+        interval: asInt(cfgInterval?.value, 5),
+        heard_window: asInt(cfgHeardWindow?.value, 120),
+        hop_limit: asInt(cfgHopLimit?.value, 7),
+        max_map_traces: asInt(cfgMaxMapTraces?.value, 800),
+        max_stored_traces: asInt(cfgMaxStoredTraces?.value, 50000),
+        webhook_url: String(cfgWebhookUrl?.value || "").trim() || null,
+        webhook_api_token: String(cfgWebhookToken?.value || "").trim() || null,
+      };
+
+      setCfgStatus("Applying...", { error: false });
+      if (cfgApply) cfgApply.disabled = true;
+      try {
+        const { ok, body } = await apiPost("/api/config", payload);
+        if (!ok) {
+          const detail = body && (body.detail || body.error) ? String(body.detail || body.error) : "config update failed";
+          setCfgStatus(detail, { error: true });
+          return;
+        }
+        state.configDirty = false;
+        setCfgStatus("Applied.", { error: false });
+        if (body && body.config) {
+          applyConfigToForm(body.config);
+        }
+      } catch (e) {
+        setCfgStatus(String(e || "config update failed"), { error: true });
+      } finally {
+        if (cfgApply) cfgApply.disabled = false;
+      }
+      refresh();
+    }
+
+    function resetConfig() {
+      const defaults = state.configDefaults || {
+        interval: 5,
+        heard_window: 120,
+        hop_limit: 7,
+        webhook_url: null,
+        webhook_api_token: null,
+        max_map_traces: 800,
+        max_stored_traces: 50000,
+      };
+      applyConfigToForm(defaults);
+      markConfigDirty();
+      setCfgStatus("Reset to defaults (not applied).", { error: false });
+    }
+
+    const HELP_COPY = {
+      interval: {
+        title: "Interval (minutes)",
+        body: `How often Meshtracer attempts a traceroute.
+
+This is a start-to-start target cadence. If a traceroute takes a long time, Meshtracer will wait less (or not at all) before starting the next cycle.`,
+      },
+      heard_window: {
+        title: "Heard Window (minutes)",
+        body: `Only nodes heard within this many minutes are eligible as traceroute targets.
+
+Larger values include more nodes (including stale ones). Smaller values focus on recently-active nodes.`,
+      },
+      hop_limit: {
+        title: "Hop Limit",
+        body: `The maximum hop count used for Meshtastic traceroute.
+
+Higher values can discover longer routes but may take longer. Meshtracer also derives an internal per-hop timeout from (interval / hop_limit).`,
+      },
+      max_map_traces: {
+        title: "Max Map Traces",
+        body: `Maximum number of completed traceroutes included in the map/API snapshot.
+
+This only affects what the UI loads and renders; it does not delete history from the database.`,
+      },
+      max_stored_traces: {
+        title: "Max Stored Traces",
+        body: `Maximum number of completed traceroutes kept in SQLite for the connected node partition.
+
+Set to 0 to disable pruning (database can grow without bound).`,
+      },
+      webhook_url: {
+        title: "Webhook URL",
+        body: `Optional URL to POST structured JSON when a traceroute completes.
+
+Leave blank to disable webhooks.`,
+      },
+      webhook_api_token: {
+        title: "Webhook API Token",
+        body: `Optional token added to webhook requests.
+
+Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank for no auth.`,
+      },
+    };
+
+    function openHelp(helpId) {
+      const key = String(helpId || "").trim();
+      const entry = HELP_COPY[key];
+      if (!entry || !helpModal || !helpTitle || !helpBody) return;
+      helpTitle.textContent = String(entry.title || "Help");
+      helpBody.textContent = String(entry.body || "");
+      helpModal.classList.remove("hidden");
+      try {
+        helpClose.focus();
+      } catch (_e) {
+      }
+    }
+
+    function closeHelp() {
+      if (!helpModal) return;
+      helpModal.classList.add("hidden");
     }
 
     async function connectToHost(hostOverride) {
@@ -2045,6 +2563,35 @@ MAP_HTML = """<!doctype html>
     connectBtn.addEventListener("click", () => connectToHost());
     disconnectBtn.addEventListener("click", () => disconnectFromHost());
     discoveryRescan.addEventListener("click", () => rescanDiscovery());
+    if (cfgApply) cfgApply.addEventListener("click", () => applyConfig());
+    if (cfgReset) cfgReset.addEventListener("click", () => resetConfig());
+    if (helpOverlay) helpOverlay.addEventListener("click", () => closeHelp());
+    if (helpClose) helpClose.addEventListener("click", () => closeHelp());
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && helpModal && !helpModal.classList.contains("hidden")) {
+        closeHelp();
+      }
+    });
+    for (const btn of document.querySelectorAll("button[data-help]")) {
+      btn.addEventListener("click", () => openHelp(btn.dataset.help));
+    }
+    for (const el of [
+      cfgInterval,
+      cfgHeardWindow,
+      cfgHopLimit,
+      cfgMaxMapTraces,
+      cfgMaxStoredTraces,
+      cfgWebhookUrl,
+      cfgWebhookToken,
+    ]) {
+      if (!el) continue;
+      el.addEventListener("input", () => markConfigDirty());
+      el.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          applyConfig();
+        }
+      });
+    }
     connectHostInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         connectToHost();
@@ -2054,10 +2601,14 @@ MAP_HTML = """<!doctype html>
     async function refresh() {
       try {
         const response = await fetch("/api/map", { cache: "no-store" });
-        if (!response.ok) return;
+        if (!response.ok) {
+          reportClientError(`GET /api/map failed (HTTP ${response.status})`, { prefix: "Network" });
+          return;
+        }
         const data = await response.json();
         draw(data);
-      } catch (_e) {
+      } catch (e) {
+        reportClientError(String(e || "refresh failed"), { prefix: "UI error" });
       }
     }
 
@@ -2074,6 +2625,8 @@ def start_map_server(
     connect: Callable[[str], tuple[bool, str]],
     disconnect: Callable[[], tuple[bool, str]],
     rescan_discovery: Callable[[], tuple[bool, str]],
+    get_config: Callable[[], dict[str, Any]],
+    set_config: Callable[[dict[str, Any]], tuple[bool, str]],
     host: str,
     port: int,
 ) -> ThreadingHTTPServer:
@@ -2125,6 +2678,9 @@ def start_map_server(
             if path == "/api/map":
                 self._send_json(snapshot())
                 return
+            if path == "/api/config":
+                self._send_json({"ok": True, "config": get_config()})
+                return
             if path == "/healthz":
                 self._send_json({"ok": True, "at_utc": utc_now()})
                 return
@@ -2132,6 +2688,23 @@ def start_map_server(
 
         def do_POST(self) -> None:
             path = self.path.split("?", 1)[0]
+            if path == "/api/config":
+                body, err = self._read_json_body()
+                if err is not None or body is None:
+                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                    return
+                ok, detail = set_config(body)
+                status = 200 if ok else 400
+                self._send_json(
+                    {
+                        "ok": ok,
+                        "detail": detail,
+                        "config": get_config(),
+                        "snapshot": snapshot(),
+                    },
+                    status=status,
+                )
+                return
             if path == "/api/connect":
                 body, err = self._read_json_body()
                 if err is not None or body is None:

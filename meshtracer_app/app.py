@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import webbrowser
+from copy import deepcopy
 from typing import Any, Callable
 
 from .cli import parse_args
@@ -22,6 +23,17 @@ from .meshtastic_helpers import (
 from .state import MapState, RuntimeLogBuffer
 from .storage import SQLiteStore
 from .webhook import post_webhook
+
+
+DEFAULT_RUNTIME_CONFIG: dict[str, Any] = {
+    "interval": 5,
+    "heard_window": 120,
+    "hop_limit": 7,
+    "webhook_url": None,
+    "webhook_api_token": None,
+    "max_map_traces": 800,
+    "max_stored_traces": 50000,
+}
 
 
 class MeshTracerController:
@@ -56,6 +68,154 @@ class MeshTracerController:
         self._connection_error: str | None = None
         self._discovery = LanDiscoverer()
         self._discovery.set_enabled(False)
+        self._config: dict[str, Any] = self._config_from_args(args)
+
+    @staticmethod
+    def _config_from_args(args: Any) -> dict[str, Any]:
+        def pick_int(name: str) -> int:
+            value = getattr(args, name, None)
+            if value is None:
+                return int(DEFAULT_RUNTIME_CONFIG[name])
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return int(DEFAULT_RUNTIME_CONFIG[name])
+
+        def pick_str(name: str) -> str | None:
+            value = getattr(args, name, None)
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text or None
+
+        config = deepcopy(DEFAULT_RUNTIME_CONFIG)
+        config["interval"] = max(1, pick_int("interval"))
+        config["heard_window"] = max(1, pick_int("heard_window"))
+        config["hop_limit"] = max(1, pick_int("hop_limit"))
+        config["max_map_traces"] = max(1, pick_int("max_map_traces"))
+        config["max_stored_traces"] = max(0, pick_int("max_stored_traces"))
+        config["webhook_url"] = pick_str("webhook_url")
+        config["webhook_api_token"] = pick_str("webhook_api_token")
+        return config
+
+    def get_config(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._config)
+
+    def set_config(self, update: dict[str, Any]) -> tuple[bool, str]:
+        if not isinstance(update, dict):
+            return False, "expected an object"
+
+        with self._lock:
+            current = dict(self._config)
+            interface = self._interface
+            map_state = self._map_state
+
+        def pick_int(name: str) -> int | None:
+            if name not in update:
+                return None
+            value = update.get(name)
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"invalid {name}")
+
+        def pick_str(name: str) -> str | None:
+            if name not in update:
+                return None
+            value = update.get(name)
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text or None
+
+        try:
+            interval = pick_int("interval")
+            heard_window = pick_int("heard_window")
+            hop_limit = pick_int("hop_limit")
+            max_map_traces = pick_int("max_map_traces")
+            max_stored_traces = pick_int("max_stored_traces")
+        except ValueError as exc:
+            return False, str(exc)
+
+        if interval is not None and interval <= 0:
+            return False, "interval must be > 0"
+        if heard_window is not None and heard_window <= 0:
+            return False, "heard_window must be > 0"
+        if hop_limit is not None and hop_limit <= 0:
+            return False, "hop_limit must be > 0"
+        if max_map_traces is not None and max_map_traces <= 0:
+            return False, "max_map_traces must be > 0"
+        if max_stored_traces is not None and max_stored_traces < 0:
+            return False, "max_stored_traces must be >= 0"
+
+        webhook_url = pick_str("webhook_url")
+        webhook_api_token = pick_str("webhook_api_token")
+
+        new_config = dict(current)
+        if interval is not None:
+            new_config["interval"] = interval
+        if heard_window is not None:
+            new_config["heard_window"] = heard_window
+        if hop_limit is not None:
+            new_config["hop_limit"] = hop_limit
+        if max_map_traces is not None:
+            new_config["max_map_traces"] = max_map_traces
+        if max_stored_traces is not None:
+            new_config["max_stored_traces"] = max_stored_traces
+        if webhook_url is not None or "webhook_url" in update:
+            new_config["webhook_url"] = webhook_url
+        if webhook_api_token is not None or "webhook_api_token" in update:
+            new_config["webhook_api_token"] = webhook_api_token
+
+        with self._lock:
+            self._config = new_config
+
+        if map_state is not None:
+            try:
+                map_state.set_limits(
+                    max_traces=int(new_config["max_map_traces"]),
+                    max_stored_traces=int(new_config["max_stored_traces"]),
+                )
+            except Exception:
+                pass
+
+        if interface is not None:
+            try:
+                self._apply_interface_timeout(
+                    interface,
+                    interval_minutes=int(new_config["interval"]),
+                    hop_limit=int(new_config["hop_limit"]),
+                )
+            except Exception:
+                pass
+
+        webhook_on = "on" if new_config.get("webhook_url") else "off"
+        self._emit(
+            f"[{utc_now()}] Config updated: interval={new_config['interval']}m "
+            f"heard_window={new_config['heard_window']}m hop_limit={new_config['hop_limit']} "
+            f"webhook={webhook_on}"
+        )
+        return True, "updated"
+
+    def _apply_interface_timeout(self, interface: Any, *, interval_minutes: int, hop_limit: int) -> None:
+        interval_seconds = max(1, int(interval_minutes)) * 60
+        hop_limit_int = max(1, int(hop_limit))
+        effective_timeout = max(1, (interval_seconds - 1) // hop_limit_int)
+        if hasattr(interface, "_timeout") and hasattr(interface._timeout, "expireTimeout"):
+            interface._timeout.expireTimeout = effective_timeout
+            est_wait = effective_timeout * hop_limit_int
+            self._emit(
+                f"[{utc_now()}] Traceroute timeout base set to {effective_timeout}s "
+                f"(~{est_wait}s max wait at hop-limit {hop_limit_int})."
+            )
+        else:
+            self._emit_error(
+                f"[{utc_now()}] Warning: unable to set Meshtastic internal timeout "
+                "(private API changed?)."
+            )
 
     def set_discovery_enabled(self, enabled: bool) -> None:
         self._discovery.set_enabled(enabled)
@@ -102,6 +262,13 @@ class MeshTracerController:
         payload["connected_host"] = connected_host
         payload["connection_error"] = connection_error
         payload["discovery"] = self._discovery.snapshot()
+        payload["config"] = self.get_config()
+        payload["config_defaults"] = deepcopy(DEFAULT_RUNTIME_CONFIG)
+        payload["server"] = {
+            "db_path": str(getattr(self._args, "db_path", "") or ""),
+            "map_host": str(getattr(self._args, "map_host", "") or ""),
+            "map_port": int(getattr(self._args, "map_port", 0) or 0),
+        }
         return payload
 
     def connect(self, host: str) -> tuple[bool, str]:
@@ -161,11 +328,14 @@ class MeshTracerController:
 
         self._emit(f"[{utc_now()}] Connected.")
         partition_key = resolve_mesh_partition_key(interface=interface, fallback_host=host)
+        config = self.get_config()
         map_state = MapState(
             store=self._store,
             mesh_host=partition_key,
-            max_traces=self._args.max_map_traces,
-            max_stored_traces=self._args.max_stored_traces,
+            max_traces=int(config.get("max_map_traces") or DEFAULT_RUNTIME_CONFIG["max_map_traces"]),
+            max_stored_traces=int(
+                config.get("max_stored_traces") or DEFAULT_RUNTIME_CONFIG["max_stored_traces"]
+            ),
             log_buffer=self._log_buffer,
         )
 
@@ -207,21 +377,11 @@ class MeshTracerController:
 
         interface.onResponseTraceRoute = wrapped_traceroute_callback
 
-        interval_seconds = int(self._args.interval) * 60
-        effective_timeout = max(1, (interval_seconds - 1) // int(self._args.hop_limit))
-
-        if hasattr(interface, "_timeout") and hasattr(interface._timeout, "expireTimeout"):
-            interface._timeout.expireTimeout = effective_timeout
-            est_wait = effective_timeout * int(self._args.hop_limit)
-            self._emit(
-                f"[{utc_now()}] Traceroute timeout base set to {effective_timeout}s "
-                f"(~{est_wait}s max wait at hop-limit {self._args.hop_limit})."
-            )
-        else:
-            self._emit_error(
-                f"[{utc_now()}] Warning: unable to set Meshtastic internal timeout "
-                "(private API changed?)."
-            )
+        self._apply_interface_timeout(
+            interface,
+            interval_minutes=int(config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"]),
+            hop_limit=int(config.get("hop_limit") or DEFAULT_RUNTIME_CONFIG["hop_limit"]),
+        )
 
         stop_event = threading.Event()
         worker = threading.Thread(
@@ -347,10 +507,16 @@ class MeshTracerController:
         stop_event: threading.Event,
         connected_host: str,
     ) -> None:
-        interval_seconds = int(self._args.interval) * 60
-        heard_window_seconds = int(self._args.heard_window) * 60
-
         while not stop_event.is_set():
+            config = self.get_config()
+            interval_seconds = int(config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"]) * 60
+            heard_window_seconds = (
+                int(config.get("heard_window") or DEFAULT_RUNTIME_CONFIG["heard_window"]) * 60
+            )
+            hop_limit = int(config.get("hop_limit") or DEFAULT_RUNTIME_CONFIG["hop_limit"])
+            webhook_url = config.get("webhook_url")
+            webhook_api_token = config.get("webhook_api_token")
+
             cycle_start = time.time()
 
             try:
@@ -380,11 +546,11 @@ class MeshTracerController:
                     traceroute_capture["result"] = None
                     interface.sendTraceRoute(
                         dest=target["num"],
-                        hopLimit=int(self._args.hop_limit),
+                        hopLimit=hop_limit,
                     )
                     self._emit(f"[{utc_now()}] Traceroute complete.")
 
-                    if self._args.webhook_url:
+                    if webhook_url:
                         if traceroute_capture["result"] is None:
                             self._emit_error(
                                 f"[{utc_now()}] Webhook skipped: no parsed "
@@ -395,9 +561,9 @@ class MeshTracerController:
                                 "event": "meshtastic_traceroute_complete",
                                 "sent_at_utc": utc_now(),
                                 "mesh_host": connected_host,
-                                "interval_minutes": int(self._args.interval),
+                                "interval_minutes": int(config.get("interval") or 0),
                                 "interval_seconds": interval_seconds,
-                                "hop_limit": int(self._args.hop_limit),
+                                "hop_limit": hop_limit,
                                 "selected_target": node_record_from_node(target),
                                 "selected_target_last_heard_age_seconds": round(
                                     float(last_heard_age or 0), 3
@@ -406,8 +572,8 @@ class MeshTracerController:
                                 "traceroute": traceroute_capture["result"],
                             }
                             delivered, detail = post_webhook(
-                                url=self._args.webhook_url,
-                                api_token=self._args.webhook_api_token,
+                                url=str(webhook_url),
+                                api_token=str(webhook_api_token) if webhook_api_token else None,
                                 payload=webhook_payload,
                             )
                             if delivered:
@@ -494,6 +660,8 @@ def main() -> int:
                     controller.connect,
                     controller.disconnect,
                     controller.rescan_discovery,
+                    controller.get_config,
+                    controller.set_config,
                     args.map_host,
                     args.map_port,
                 )

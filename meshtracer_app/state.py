@@ -139,3 +139,19 @@ class MapState:
             "edges": edges,
             "logs": self._log_buffer.tail(limit=500) if self._log_buffer is not None else [],
         }
+
+    def set_limits(self, *, max_traces: int | None = None, max_stored_traces: int | None = None) -> None:
+        if max_traces is not None:
+            try:
+                max_traces_int = int(max_traces)
+            except (TypeError, ValueError):
+                max_traces_int = self._max_traces
+            if max_traces_int > 0:
+                self._max_traces = max_traces_int
+        if max_stored_traces is not None:
+            try:
+                max_stored_traces_int = int(max_stored_traces)
+            except (TypeError, ValueError):
+                max_stored_traces_int = self._max_stored_traces
+            if max_stored_traces_int >= 0:
+                self._max_stored_traces = max_stored_traces_int
