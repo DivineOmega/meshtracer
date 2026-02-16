@@ -1139,9 +1139,9 @@ MAP_HTML = """<!doctype html>
         </div>
         <div id="clientError" class="client-error"></div>
         <div class="legend">
-          <span><span class="dot dot-fresh"></span>Fresh</span>
-          <span><span class="dot dot-mid"></span>Mid</span>
-          <span><span class="dot dot-stale"></span>Stale</span>
+          <span><span class="dot dot-fresh"></span><span id="legendFreshText">Fresh</span></span>
+          <span><span class="dot dot-mid"></span><span id="legendMidText">Mid</span></span>
+          <span><span class="dot dot-stale"></span><span id="legendStaleText">Stale</span></span>
         </div>
       </div>
 
@@ -1211,6 +1211,25 @@ MAP_HTML = """<!doctype html>
                 <button type="button" class="cfg-help" data-help="hop_limit" aria-label="Help for hop limit">?</button>
               </div>
               <input id="cfgHopLimit" class="cfg-input" type="number" min="1" step="1">
+            </div>
+          </div>
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-title">UI</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgFreshWindow">Fresh Window (minutes)</label>
+                <button type="button" class="cfg-help" data-help="fresh_window" aria-label="Help for fresh window">?</button>
+              </div>
+              <input id="cfgFreshWindow" class="cfg-input" type="number" min="1" step="1">
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgMidWindow">Mid Window (minutes)</label>
+                <button type="button" class="cfg-help" data-help="mid_window" aria-label="Help for mid window">?</button>
+              </div>
+              <input id="cfgMidWindow" class="cfg-input" type="number" min="1" step="1">
             </div>
           </div>
         </div>
@@ -1298,6 +1317,9 @@ MAP_HTML = """<!doctype html>
     const traceDetailsClose = document.getElementById("traceDetailsClose");
     const nodeSearchInput = document.getElementById("nodeSearch");
     const nodeSortSelect = document.getElementById("nodeSort");
+    const legendFreshText = document.getElementById("legendFreshText");
+    const legendMidText = document.getElementById("legendMidText");
+    const legendStaleText = document.getElementById("legendStaleText");
     const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
     const tabPanels = Array.from(document.querySelectorAll(".panel"));
     const onboarding = document.getElementById("onboarding");
@@ -1312,6 +1334,8 @@ MAP_HTML = """<!doctype html>
     const discoveryList = document.getElementById("discoveryList");
     const cfgInterval = document.getElementById("cfgInterval");
     const cfgHeardWindow = document.getElementById("cfgHeardWindow");
+    const cfgFreshWindow = document.getElementById("cfgFreshWindow");
+    const cfgMidWindow = document.getElementById("cfgMidWindow");
     const cfgHopLimit = document.getElementById("cfgHopLimit");
     const cfgMaxMapTraces = document.getElementById("cfgMaxMapTraces");
     const cfgMaxStoredTraces = document.getElementById("cfgMaxStoredTraces");
@@ -1481,13 +1505,52 @@ MAP_HTML = """<!doctype html>
       return trimLabel(String(node.num || "NODE"));
     }
 
-    function nodeClass(node, nowSec) {
+    function clampFreshnessThresholds(config) {
+      const cfg = config && typeof config === "object" ? config : {};
+      const defaults = state.configDefaults && typeof state.configDefaults === "object"
+        ? state.configDefaults
+        : { fresh_window: 120, mid_window: 480 };
+
+      function asInt(value, fallback) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.trunc(n);
+      }
+
+      let fresh = asInt(cfg.fresh_window ?? defaults.fresh_window, 120);
+      let mid = asInt(cfg.mid_window ?? defaults.mid_window, 480);
+      fresh = Math.max(1, fresh);
+      mid = Math.max(fresh, mid);
+      return { fresh, mid };
+    }
+
+    function formatMinutesCompact(minutes) {
+      const total = Math.max(0, Math.trunc(Number(minutes || 0)));
+      const hours = Math.floor(total / 60);
+      const mins = total % 60;
+      if (hours <= 0) return `${total}m`;
+      if (mins <= 0) return `${hours}h`;
+      return `${hours}h${mins}m`;
+    }
+
+    function updateFreshnessLegend(config) {
+      if (!legendFreshText || !legendMidText || !legendStaleText) return;
+      const { fresh, mid } = clampFreshnessThresholds(config);
+      const freshText = formatMinutesCompact(fresh);
+      const midText = formatMinutesCompact(mid);
+      legendFreshText.textContent = `Fresh (<= ${freshText})`;
+      legendMidText.textContent = mid > fresh ? `Mid (${freshText}-${midText})` : `Mid (<= ${midText})`;
+      legendStaleText.textContent = `Stale (> ${midText})`;
+    }
+
+    function nodeClass(node, nowSec, config) {
       const heard = Number(node.last_heard || 0);
       if (!heard) return "node-unknown";
       const ageMinutes = (nowSec - heard) / 60;
       if (!Number.isFinite(ageMinutes)) return "node-unknown";
-      if (ageMinutes <= 120) return "node-fresh";
-      if (ageMinutes <= 480) return "node-mid";
+      const { fresh, mid } = clampFreshnessThresholds(config);
+      if (ageMinutes <= fresh) return "node-fresh";
+      if (ageMinutes <= mid) return "node-mid";
       return "node-stale";
     }
 
@@ -1615,618 +1678,618 @@ MAP_HTML = """<!doctype html>
       ];
     }
 
-	    function segmentDistanceMeters(lat1, lon1, lat2, lon2) {
-	      const midLat = (lat1 + lat2) / 2;
-	      const mLat = 111111;
-	      const mLon = metersPerLonDegree(midLat);
-	      const dx = (lon2 - lon1) * mLon;
-	      const dy = (lat2 - lat1) * mLat;
-	      return Math.hypot(dx, dy);
-	    }
+    function segmentDistanceMeters(lat1, lon1, lat2, lon2) {
+      const midLat = (lat1 + lat2) / 2;
+      const mLat = 111111;
+      const mLon = metersPerLonDegree(midLat);
+      const dx = (lon2 - lon1) * mLon;
+      const dy = (lat2 - lat1) * mLat;
+      return Math.hypot(dx, dy);
+    }
 
-	    function estimateNodePositions(nodes, traces) {
-	      const nodeMap = new Map();
-	      for (const raw of Array.isArray(nodes) ? nodes : []) {
-	        const num = Number(raw?.num);
-	        if (!Number.isFinite(num)) continue;
-	        const node = { ...(raw || {}), num, estimated: false };
-	        if (!hasCoord(node)) {
-	          node.lat = null;
-	          node.lon = null;
-	        }
-	        nodeMap.set(num, node);
-	      }
+    function estimateNodePositions(nodes, traces) {
+      const nodeMap = new Map();
+      for (const raw of Array.isArray(nodes) ? nodes : []) {
+        const num = Number(raw?.num);
+        if (!Number.isFinite(num)) continue;
+        const node = { ...(raw || {}), num, estimated: false };
+        if (!hasCoord(node)) {
+          node.lat = null;
+          node.lon = null;
+        }
+        nodeMap.set(num, node);
+      }
 
-	      function ensureTraceNode(rawNum) {
-	        const num = Number(rawNum);
-	        if (!Number.isFinite(num) || nodeMap.has(num)) return;
-	        const shortName = shortNameFromNodeNum(num) || null;
-	        nodeMap.set(num, {
-	          num,
-	          id: null,
-	          long_name: shortName ? `Unknown ${shortName}` : "Unknown",
-	          short_name: shortName,
-	          lat: null,
-	          lon: null,
-	          last_heard: null,
-	          estimated: false,
-	          trace_only: true,
-	        });
-	      }
+      function ensureTraceNode(rawNum) {
+        const num = Number(rawNum);
+        if (!Number.isFinite(num) || nodeMap.has(num)) return;
+        const shortName = shortNameFromNodeNum(num) || null;
+        nodeMap.set(num, {
+          num,
+          id: null,
+          long_name: shortName ? `Unknown ${shortName}` : "Unknown",
+          short_name: shortName,
+          lat: null,
+          lon: null,
+          last_heard: null,
+          estimated: false,
+          trace_only: true,
+        });
+      }
 
-	      // Build graph edges from all observed traceroute hop pairs.
-	      const adj = new Map(); // num -> Map(neighborNum -> { count, snr_sum, snr_count })
-	      function ensureAdj(num) {
-	        if (!adj.has(num)) adj.set(num, new Map());
-	      }
-	      function addEdge(aRaw, bRaw, snrDb) {
-	        const a = Number(aRaw);
-	        const b = Number(bRaw);
-	        if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return;
-	        if (!nodeMap.has(a) || !nodeMap.has(b)) return;
-	        ensureAdj(a);
-	        ensureAdj(b);
-	        const mA = adj.get(a);
-	        const mB = adj.get(b);
-	        const aMeta = mA.get(b) || { count: 0, snr_sum: 0, snr_count: 0 };
-	        aMeta.count += 1;
-	        if (Number.isFinite(snrDb)) {
-	          aMeta.snr_sum += snrDb;
-	          aMeta.snr_count += 1;
-	        }
-	        mA.set(b, aMeta);
+      // Build graph edges from all observed traceroute hop pairs.
+      const adj = new Map(); // num -> Map(neighborNum -> { count, snr_sum, snr_count })
+      function ensureAdj(num) {
+        if (!adj.has(num)) adj.set(num, new Map());
+      }
+      function addEdge(aRaw, bRaw, snrDb) {
+        const a = Number(aRaw);
+        const b = Number(bRaw);
+        if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return;
+        if (!nodeMap.has(a) || !nodeMap.has(b)) return;
+        ensureAdj(a);
+        ensureAdj(b);
+        const mA = adj.get(a);
+        const mB = adj.get(b);
+        const aMeta = mA.get(b) || { count: 0, snr_sum: 0, snr_count: 0 };
+        aMeta.count += 1;
+        if (Number.isFinite(snrDb)) {
+          aMeta.snr_sum += snrDb;
+          aMeta.snr_count += 1;
+        }
+        mA.set(b, aMeta);
 
-	        const bMeta = mB.get(a) || { count: 0, snr_sum: 0, snr_count: 0 };
-	        bMeta.count += 1;
-	        if (Number.isFinite(snrDb)) {
-	          bMeta.snr_sum += snrDb;
-	          bMeta.snr_count += 1;
-	        }
-	        mB.set(a, bMeta);
-	      }
+        const bMeta = mB.get(a) || { count: 0, snr_sum: 0, snr_count: 0 };
+        bMeta.count += 1;
+        if (Number.isFinite(snrDb)) {
+          bMeta.snr_sum += snrDb;
+          bMeta.snr_count += 1;
+        }
+        mB.set(a, bMeta);
+      }
 
-	      function edgeSnrFromRoute(routeNums, snrList, index) {
-	        if (!Array.isArray(snrList)) return NaN;
-	        if (snrList.length === routeNums.length) {
-	          const raw = index + 1 < snrList.length ? snrList[index + 1] : snrList[index];
-	          const value = Number(raw);
-	          return Number.isFinite(value) ? value : NaN;
-	        }
-	        if (snrList.length === routeNums.length - 1) {
-	          const value = Number(snrList[index]);
-	          return Number.isFinite(value) ? value : NaN;
-	        }
-	        return NaN;
-	      }
+      function edgeSnrFromRoute(routeNums, snrList, index) {
+        if (!Array.isArray(snrList)) return NaN;
+        if (snrList.length === routeNums.length) {
+          const raw = index + 1 < snrList.length ? snrList[index + 1] : snrList[index];
+          const value = Number(raw);
+          return Number.isFinite(value) ? value : NaN;
+        }
+        if (snrList.length === routeNums.length - 1) {
+          const value = Number(snrList[index]);
+          return Number.isFinite(value) ? value : NaN;
+        }
+        return NaN;
+      }
 
-	      for (const trace of Array.isArray(traces) ? traces : []) {
-	        for (const key of ["towards_nums", "back_nums"]) {
-	          const route = Array.isArray(trace?.[key]) ? trace[key] : [];
-	          const snrKey = key === "towards_nums" ? "towards_snr_db" : "back_snr_db";
-	          const snrList = Array.isArray(trace?.[snrKey]) ? trace[snrKey] : null;
-	          for (const rawNum of route) {
-	            ensureTraceNode(rawNum);
-	          }
-	          const nums = route.map((value) => Number(value));
-	          if (nums.length < 2) continue;
-	          for (let i = 0; i < nums.length - 1; i += 1) {
-	            addEdge(nums[i], nums[i + 1], edgeSnrFromRoute(nums, snrList, i));
-	          }
-	        }
-	      }
+      for (const trace of Array.isArray(traces) ? traces : []) {
+        for (const key of ["towards_nums", "back_nums"]) {
+          const route = Array.isArray(trace?.[key]) ? trace[key] : [];
+          const snrKey = key === "towards_nums" ? "towards_snr_db" : "back_snr_db";
+          const snrList = Array.isArray(trace?.[snrKey]) ? trace[snrKey] : null;
+          for (const rawNum of route) {
+            ensureTraceNode(rawNum);
+          }
+          const nums = route.map((value) => Number(value));
+          if (nums.length < 2) continue;
+          for (let i = 0; i < nums.length - 1; i += 1) {
+            addEdge(nums[i], nums[i + 1], edgeSnrFromRoute(nums, snrList, i));
+          }
+        }
+      }
 
-	      const anchors = [];
-	      for (const node of nodeMap.values()) {
-	        if (hasCoord(node)) anchors.push(node);
-	      }
-	      if (!anchors.length) return nodeMap;
+      const anchors = [];
+      for (const node of nodeMap.values()) {
+        if (hasCoord(node)) anchors.push(node);
+      }
+      if (!anchors.length) return nodeMap;
 
-	      function median(values) {
-	        const items = Array.isArray(values) ? values.filter((v) => Number.isFinite(v)) : [];
-	        if (!items.length) return NaN;
-	        items.sort((a, b) => a - b);
-	        const mid = Math.floor(items.length / 2);
-	        if (items.length % 2) return items[mid];
-	        return (items[mid - 1] + items[mid]) / 2;
-	      }
+      function median(values) {
+        const items = Array.isArray(values) ? values.filter((v) => Number.isFinite(v)) : [];
+        if (!items.length) return NaN;
+        items.sort((a, b) => a - b);
+        const mid = Math.floor(items.length / 2);
+        if (items.length % 2) return items[mid];
+        return (items[mid - 1] + items[mid]) / 2;
+      }
 
-	      function haversineMeters(lat1, lon1, lat2, lon2) {
-	        const R = 6371000;
-	        const rad = Math.PI / 180;
-	        const phi1 = Number(lat1) * rad;
-	        const phi2 = Number(lat2) * rad;
-	        const dPhi = (Number(lat2) - Number(lat1)) * rad;
-	        const dLam = (Number(lon2) - Number(lon1)) * rad;
-	        const s1 = Math.sin(dPhi / 2);
-	        const s2 = Math.sin(dLam / 2);
-	        const a = s1 * s1 + Math.cos(phi1) * Math.cos(phi2) * s2 * s2;
-	        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
-	        return R * c;
-	      }
+      function haversineMeters(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const rad = Math.PI / 180;
+        const phi1 = Number(lat1) * rad;
+        const phi2 = Number(lat2) * rad;
+        const dPhi = (Number(lat2) - Number(lat1)) * rad;
+        const dLam = (Number(lon2) - Number(lon1)) * rad;
+        const s1 = Math.sin(dPhi / 2);
+        const s2 = Math.sin(dLam / 2);
+        const a = s1 * s1 + Math.cos(phi1) * Math.cos(phi2) * s2 * s2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+        return R * c;
+      }
 
-	      // Local equirectangular projection around the mean anchor position.
-	      let lat0 = 0;
-	      let lon0 = 0;
-	      for (const a of anchors) {
-	        lat0 += Number(a.lat);
-	        lon0 += Number(a.lon);
-	      }
-	      lat0 /= anchors.length;
-	      lon0 /= anchors.length;
-	      const mLat = 111111;
-	      const mLon = metersPerLonDegree(lat0);
-	      function llToXY(lat, lon) {
-	        return {
-	          x: (Number(lon) - lon0) * mLon,
-	          y: (Number(lat) - lat0) * mLat,
-	        };
-	      }
-	      function xyToLL(x, y) {
-	        return {
-	          lat: lat0 + Number(y) / mLat,
-	          lon: lon0 + Number(x) / mLon,
-	        };
-	      }
+      // Local equirectangular projection around the mean anchor position.
+      let lat0 = 0;
+      let lon0 = 0;
+      for (const a of anchors) {
+        lat0 += Number(a.lat);
+        lon0 += Number(a.lon);
+      }
+      lat0 /= anchors.length;
+      lon0 /= anchors.length;
+      const mLat = 111111;
+      const mLon = metersPerLonDegree(lat0);
+      function llToXY(lat, lon) {
+        return {
+          x: (Number(lon) - lon0) * mLon,
+          y: (Number(lat) - lat0) * mLat,
+        };
+      }
+      function xyToLL(x, y) {
+        return {
+          lat: lat0 + Number(y) / mLat,
+          lon: lon0 + Number(x) / mLon,
+        };
+      }
 
-	      const anchorPos = new Map(); // num -> {x,y}
-	      for (const a of anchors) {
-	        anchorPos.set(Number(a.num), llToXY(a.lat, a.lon));
-	      }
+      const anchorPos = new Map(); // num -> {x,y}
+      for (const a of anchors) {
+        anchorPos.set(Number(a.num), llToXY(a.lat, a.lon));
+      }
 
-	      function edgeMeanSnrDb(meta) {
-	        if (!meta || !meta.snr_count) return NaN;
-	        return meta.snr_sum / meta.snr_count;
-	      }
+      function edgeMeanSnrDb(meta) {
+        if (!meta || !meta.snr_count) return NaN;
+        return meta.snr_sum / meta.snr_count;
+      }
 
-	      function snrQualityFromDb(snrDb) {
-	        const value = Number(snrDb);
-	        if (!Number.isFinite(value)) return null;
-	        // Typical LoRa SNR values fall roughly between [-20, +12].
-	        const clamped = Math.max(-20, Math.min(12, value));
-	        return (clamped + 20) / 32;
-	      }
+      function snrQualityFromDb(snrDb) {
+        const value = Number(snrDb);
+        if (!Number.isFinite(value)) return null;
+        // Typical LoRa SNR values fall roughly between [-20, +12].
+        const clamped = Math.max(-20, Math.min(12, value));
+        return (clamped + 20) / 32;
+      }
 
-	      function edgeCostUnits(meta) {
-	        const q = snrQualityFromDb(edgeMeanSnrDb(meta));
-	        if (q === null) return 1;
-	        // High SNR => shorter, low SNR => longer (bounded multiplier).
-	        const mult = 0.85 + (1 - q) * 1.25;
-	        return Math.max(0.7, Math.min(2.4, mult));
-	      }
+      function edgeCostUnits(meta) {
+        const q = snrQualityFromDb(edgeMeanSnrDb(meta));
+        if (q === null) return 1;
+        // High SNR => shorter, low SNR => longer (bounded multiplier).
+        const mult = 0.85 + (1 - q) * 1.25;
+        return Math.max(0.7, Math.min(2.4, mult));
+      }
 
-	      function edgeSpringWeight(meta) {
-	        const count = meta && Number.isFinite(meta.count) ? Number(meta.count) : 1;
-	        const q = snrQualityFromDb(edgeMeanSnrDb(meta));
-	        const snrFactor = q === null ? 0.85 : 0.55 + 0.75 * q;
-	        return Math.min(3.2, Math.sqrt(Math.max(1, count)) * snrFactor);
-	      }
+      function edgeSpringWeight(meta) {
+        const count = meta && Number.isFinite(meta.count) ? Number(meta.count) : 1;
+        const q = snrQualityFromDb(edgeMeanSnrDb(meta));
+        const snrFactor = q === null ? 0.85 : 0.55 + 0.75 * q;
+        return Math.min(3.2, Math.sqrt(Math.max(1, count)) * snrFactor);
+      }
 
-	      function dijkstra(startNum, maxCost) {
-	        const start = Number(startNum);
-	        const dist = new Map();
-	        if (!Number.isFinite(start) || !nodeMap.has(start)) return dist;
-	        dist.set(start, 0);
+      function dijkstra(startNum, maxCost) {
+        const start = Number(startNum);
+        const dist = new Map();
+        if (!Number.isFinite(start) || !nodeMap.has(start)) return dist;
+        dist.set(start, 0);
 
-	        const heap = []; // [cost, num]
-	        function heapPush(item) {
-	          heap.push(item);
-	          let i = heap.length - 1;
-	          while (i > 0) {
-	            const p = (i - 1) >> 1;
-	            if (heap[p][0] <= item[0]) break;
-	            heap[i] = heap[p];
-	            i = p;
-	          }
-	          heap[i] = item;
-	        }
-	        function heapPop() {
-	          const top = heap[0];
-	          const last = heap.pop();
-	          if (heap.length) {
-	            let i = 0;
-	            while (true) {
-	              const left = i * 2 + 1;
-	              const right = left + 1;
-	              if (left >= heap.length) break;
-	              let child = left;
-	              if (right < heap.length && heap[right][0] < heap[left][0]) child = right;
-	              if (heap[child][0] >= last[0]) break;
-	              heap[i] = heap[child];
-	              i = child;
-	            }
-	            heap[i] = last;
-	          }
-	          return top;
-	        }
+        const heap = []; // [cost, num]
+        function heapPush(item) {
+          heap.push(item);
+          let i = heap.length - 1;
+          while (i > 0) {
+            const p = (i - 1) >> 1;
+            if (heap[p][0] <= item[0]) break;
+            heap[i] = heap[p];
+            i = p;
+          }
+          heap[i] = item;
+        }
+        function heapPop() {
+          const top = heap[0];
+          const last = heap.pop();
+          if (heap.length) {
+            let i = 0;
+            while (true) {
+              const left = i * 2 + 1;
+              const right = left + 1;
+              if (left >= heap.length) break;
+              let child = left;
+              if (right < heap.length && heap[right][0] < heap[left][0]) child = right;
+              if (heap[child][0] >= last[0]) break;
+              heap[i] = heap[child];
+              i = child;
+            }
+            heap[i] = last;
+          }
+          return top;
+        }
 
-	        heapPush([0, start]);
-	        while (heap.length) {
-	          const [cost, cur] = heapPop();
-	          const best = dist.get(cur);
-	          if (best === undefined || cost > best + 1e-9) continue;
-	          if (cost > maxCost) continue;
-	          const neighbors = adj.get(cur);
-	          if (!neighbors) continue;
-	          for (const [nxt, meta] of neighbors.entries()) {
-	            const step = edgeCostUnits(meta);
-	            const nextCost = cost + step;
-	            if (!Number.isFinite(nextCost) || nextCost > maxCost) continue;
-	            const prev = dist.get(nxt);
-	            if (prev === undefined || nextCost < prev - 1e-9) {
-	              dist.set(nxt, nextCost);
-	              heapPush([nextCost, nxt]);
-	            }
-	          }
-	        }
-	        return dist;
-	      }
+        heapPush([0, start]);
+        while (heap.length) {
+          const [cost, cur] = heapPop();
+          const best = dist.get(cur);
+          if (best === undefined || cost > best + 1e-9) continue;
+          if (cost > maxCost) continue;
+          const neighbors = adj.get(cur);
+          if (!neighbors) continue;
+          for (const [nxt, meta] of neighbors.entries()) {
+            const step = edgeCostUnits(meta);
+            const nextCost = cost + step;
+            if (!Number.isFinite(nextCost) || nextCost > maxCost) continue;
+            const prev = dist.get(nxt);
+            if (prev === undefined || nextCost < prev - 1e-9) {
+              dist.set(nxt, nextCost);
+              heapPush([nextCost, nxt]);
+            }
+          }
+        }
+        return dist;
+      }
 
-	      function bfs(startNum, maxDepth) {
-	        const start = Number(startNum);
-	        const dist = new Map();
-	        if (!Number.isFinite(start) || !nodeMap.has(start)) return dist;
-	        dist.set(start, 0);
-	        const queue = [start];
-	        for (let qi = 0; qi < queue.length; qi += 1) {
-	          const cur = queue[qi];
-	          const curDist = dist.get(cur) || 0;
-	          if (curDist >= maxDepth) continue;
-	          const neighbors = adj.get(cur);
-	          if (!neighbors) continue;
-	          for (const nxt of neighbors.keys()) {
-	            if (dist.has(nxt)) continue;
-	            dist.set(nxt, curDist + 1);
-	            queue.push(nxt);
-	          }
-	        }
-	        return dist;
-	      }
+      function bfs(startNum, maxDepth) {
+        const start = Number(startNum);
+        const dist = new Map();
+        if (!Number.isFinite(start) || !nodeMap.has(start)) return dist;
+        dist.set(start, 0);
+        const queue = [start];
+        for (let qi = 0; qi < queue.length; qi += 1) {
+          const cur = queue[qi];
+          const curDist = dist.get(cur) || 0;
+          if (curDist >= maxDepth) continue;
+          const neighbors = adj.get(cur);
+          if (!neighbors) continue;
+          for (const nxt of neighbors.keys()) {
+            if (dist.has(nxt)) continue;
+            dist.set(nxt, curDist + 1);
+            queue.push(nxt);
+          }
+        }
+        return dist;
+      }
 
-	      const MAX_BFS_HOPS = 25;
-	      const MAX_DIJKSTRA_COST = MAX_BFS_HOPS * 2.6;
-	      const hopByAnchor = new Map(); // anchorNum -> Map(nodeNum -> hops)
-	      const costByAnchor = new Map(); // anchorNum -> Map(nodeNum -> costUnits)
-	      for (const a of anchors) {
-	        const aNum = Number(a.num);
-	        hopByAnchor.set(aNum, bfs(aNum, MAX_BFS_HOPS));
-	        costByAnchor.set(aNum, dijkstra(aNum, MAX_DIJKSTRA_COST));
-	      }
+      const MAX_BFS_HOPS = 25;
+      const MAX_DIJKSTRA_COST = MAX_BFS_HOPS * 2.6;
+      const hopByAnchor = new Map(); // anchorNum -> Map(nodeNum -> hops)
+      const costByAnchor = new Map(); // anchorNum -> Map(nodeNum -> costUnits)
+      for (const a of anchors) {
+        const aNum = Number(a.num);
+        hopByAnchor.set(aNum, bfs(aNum, MAX_BFS_HOPS));
+        costByAnchor.set(aNum, dijkstra(aNum, MAX_DIJKSTRA_COST));
+      }
 
-	      // Calibrate meters-per-unit from anchor pairs. Units are the sum of
-	      // edgeCostUnits(...) along the best path.
-	      const globalRatios = [];
-	      const perAnchorRatios = new Map(); // anchorNum -> [metersPerUnit]
-	      const MAX_CALIB_HOPS = 12;
-	      const MIN_UNIT_METERS = 10;
-	      const MAX_UNIT_METERS = 20000;
-	      for (let i = 0; i < anchors.length; i += 1) {
-	        const a = anchors[i];
-	        const hopsA = hopByAnchor.get(Number(a.num));
-	        const costsA = costByAnchor.get(Number(a.num));
-	        if (!hopsA || !costsA) continue;
-	        for (let j = i + 1; j < anchors.length; j += 1) {
-	          const b = anchors[j];
-	          const hop = hopsA.get(Number(b.num));
-	          if (!hop || hop <= 0 || hop > MAX_CALIB_HOPS) continue;
-	          const costUnits = costsA.get(Number(b.num));
-	          if (!Number.isFinite(costUnits) || costUnits <= 0) continue;
-	          const meters = haversineMeters(a.lat, a.lon, b.lat, b.lon);
-	          if (!Number.isFinite(meters) || meters <= 0) continue;
-	          const ratio = meters / costUnits;
-	          if (!Number.isFinite(ratio) || ratio < MIN_UNIT_METERS || ratio > MAX_UNIT_METERS) continue;
-	          globalRatios.push(ratio);
-	          if (!perAnchorRatios.has(Number(a.num))) perAnchorRatios.set(Number(a.num), []);
-	          if (!perAnchorRatios.has(Number(b.num))) perAnchorRatios.set(Number(b.num), []);
-	          perAnchorRatios.get(Number(a.num)).push(ratio);
-	          perAnchorRatios.get(Number(b.num)).push(ratio);
-	        }
-	      }
-	      let globalMetersPerUnit = median(globalRatios);
-	      if (!Number.isFinite(globalMetersPerUnit) || globalMetersPerUnit <= 0) {
-	        globalMetersPerUnit = 400; // safe default when we can't calibrate from anchors.
-	      }
+      // Calibrate meters-per-unit from anchor pairs. Units are the sum of
+      // edgeCostUnits(...) along the best path.
+      const globalRatios = [];
+      const perAnchorRatios = new Map(); // anchorNum -> [metersPerUnit]
+      const MAX_CALIB_HOPS = 12;
+      const MIN_UNIT_METERS = 10;
+      const MAX_UNIT_METERS = 20000;
+      for (let i = 0; i < anchors.length; i += 1) {
+        const a = anchors[i];
+        const hopsA = hopByAnchor.get(Number(a.num));
+        const costsA = costByAnchor.get(Number(a.num));
+        if (!hopsA || !costsA) continue;
+        for (let j = i + 1; j < anchors.length; j += 1) {
+          const b = anchors[j];
+          const hop = hopsA.get(Number(b.num));
+          if (!hop || hop <= 0 || hop > MAX_CALIB_HOPS) continue;
+          const costUnits = costsA.get(Number(b.num));
+          if (!Number.isFinite(costUnits) || costUnits <= 0) continue;
+          const meters = haversineMeters(a.lat, a.lon, b.lat, b.lon);
+          if (!Number.isFinite(meters) || meters <= 0) continue;
+          const ratio = meters / costUnits;
+          if (!Number.isFinite(ratio) || ratio < MIN_UNIT_METERS || ratio > MAX_UNIT_METERS) continue;
+          globalRatios.push(ratio);
+          if (!perAnchorRatios.has(Number(a.num))) perAnchorRatios.set(Number(a.num), []);
+          if (!perAnchorRatios.has(Number(b.num))) perAnchorRatios.set(Number(b.num), []);
+          perAnchorRatios.get(Number(a.num)).push(ratio);
+          perAnchorRatios.get(Number(b.num)).push(ratio);
+        }
+      }
+      let globalMetersPerUnit = median(globalRatios);
+      if (!Number.isFinite(globalMetersPerUnit) || globalMetersPerUnit <= 0) {
+        globalMetersPerUnit = 400; // safe default when we can't calibrate from anchors.
+      }
 
-	      const perAnchorMetersPerUnit = new Map();
-	      for (const a of anchors) {
-	        const ratios = perAnchorRatios.get(Number(a.num)) || [];
-	        const med = median(ratios);
-	        if (ratios.length >= 3 && Number.isFinite(med) && med > 0) {
-	          // Blend with global so tiny anchor sets don't overfit.
-	          perAnchorMetersPerUnit.set(Number(a.num), 0.7 * med + 0.3 * globalMetersPerUnit);
-	        }
-	      }
+      const perAnchorMetersPerUnit = new Map();
+      for (const a of anchors) {
+        const ratios = perAnchorRatios.get(Number(a.num)) || [];
+        const med = median(ratios);
+        if (ratios.length >= 3 && Number.isFinite(med) && med > 0) {
+          // Blend with global so tiny anchor sets don't overfit.
+          perAnchorMetersPerUnit.set(Number(a.num), 0.7 * med + 0.3 * globalMetersPerUnit);
+        }
+      }
 
-	      function metersPerUnitForAnchor(anchorNum) {
-	        const local = perAnchorMetersPerUnit.get(Number(anchorNum));
-	        if (Number.isFinite(local) && local > 0) return local;
-	        return globalMetersPerUnit;
-	      }
+      function metersPerUnitForAnchor(anchorNum) {
+        const local = perAnchorMetersPerUnit.get(Number(anchorNum));
+        if (Number.isFinite(local) && local > 0) return local;
+        return globalMetersPerUnit;
+      }
 
-	      const constraintsByNode = new Map(); // num -> [{anchor_num,x,y,hop,cost,r,w}]
-	      const MAX_CONSTRAINT_HOPS = 12;
-	      const MAX_ANCHORS_PER_NODE = 8;
-	      for (const [num, node] of nodeMap.entries()) {
-	        if (hasCoord(node)) continue;
-	        const constraints = [];
-	        for (const a of anchors) {
-	          const hopsA = hopByAnchor.get(Number(a.num));
-	          const costsA = costByAnchor.get(Number(a.num));
-	          if (!hopsA || !costsA) continue;
-	          const hop = hopsA.get(Number(num));
-	          if (!hop || hop <= 0 || hop > MAX_CONSTRAINT_HOPS) continue;
-	          const costUnits = costsA.get(Number(num));
-	          if (!Number.isFinite(costUnits) || costUnits <= 0) continue;
-	          const p = anchorPos.get(Number(a.num));
-	          if (!p) continue;
-	          const unitMeters = metersPerUnitForAnchor(Number(a.num));
-	          const r = costUnits * unitMeters;
-	          constraints.push({
-	            anchor_num: Number(a.num),
-	            x: p.x,
-	            y: p.y,
-	            hop,
-	            cost: costUnits,
-	            r,
-	            w: 1 / (hop * hop),
-	          });
-	        }
-	        constraints.sort((c1, c2) => c1.hop - c2.hop || c1.anchor_num - c2.anchor_num);
-	        if (constraints.length > MAX_ANCHORS_PER_NODE) constraints.length = MAX_ANCHORS_PER_NODE;
-	        constraintsByNode.set(Number(num), constraints);
-	      }
+      const constraintsByNode = new Map(); // num -> [{anchor_num,x,y,hop,cost,r,w}]
+      const MAX_CONSTRAINT_HOPS = 12;
+      const MAX_ANCHORS_PER_NODE = 8;
+      for (const [num, node] of nodeMap.entries()) {
+        if (hasCoord(node)) continue;
+        const constraints = [];
+        for (const a of anchors) {
+          const hopsA = hopByAnchor.get(Number(a.num));
+          const costsA = costByAnchor.get(Number(a.num));
+          if (!hopsA || !costsA) continue;
+          const hop = hopsA.get(Number(num));
+          if (!hop || hop <= 0 || hop > MAX_CONSTRAINT_HOPS) continue;
+          const costUnits = costsA.get(Number(num));
+          if (!Number.isFinite(costUnits) || costUnits <= 0) continue;
+          const p = anchorPos.get(Number(a.num));
+          if (!p) continue;
+          const unitMeters = metersPerUnitForAnchor(Number(a.num));
+          const r = costUnits * unitMeters;
+          constraints.push({
+            anchor_num: Number(a.num),
+            x: p.x,
+            y: p.y,
+            hop,
+            cost: costUnits,
+            r,
+            w: 1 / (hop * hop),
+          });
+        }
+        constraints.sort((c1, c2) => c1.hop - c2.hop || c1.anchor_num - c2.anchor_num);
+        if (constraints.length > MAX_ANCHORS_PER_NODE) constraints.length = MAX_ANCHORS_PER_NODE;
+        constraintsByNode.set(Number(num), constraints);
+      }
 
-	      const posByNum = new Map(); // num -> {x,y}
-	      const fixedNums = new Set();
-	      for (const a of anchors) {
-	        const p = anchorPos.get(Number(a.num));
-	        if (!p) continue;
-	        posByNum.set(Number(a.num), { x: p.x, y: p.y });
-	        fixedNums.add(Number(a.num));
-	      }
+      const posByNum = new Map(); // num -> {x,y}
+      const fixedNums = new Set();
+      for (const a of anchors) {
+        const p = anchorPos.get(Number(a.num));
+        if (!p) continue;
+        posByNum.set(Number(a.num), { x: p.x, y: p.y });
+        fixedNums.add(Number(a.num));
+      }
 
-	      const strongNums = new Set();
-	      function solveMultilateration(constraints) {
-	        let x = 0;
-	        let y = 0;
-	        let wSum = 0;
-	        for (const c of constraints) {
-	          x += c.x * c.w;
-	          y += c.y * c.w;
-	          wSum += c.w;
-	        }
-	        if (wSum > 0) {
-	          x /= wSum;
-	          y /= wSum;
-	        }
+      const strongNums = new Set();
+      function solveMultilateration(constraints) {
+        let x = 0;
+        let y = 0;
+        let wSum = 0;
+        for (const c of constraints) {
+          x += c.x * c.w;
+          y += c.y * c.w;
+          wSum += c.w;
+        }
+        if (wSum > 0) {
+          x /= wSum;
+          y /= wSum;
+        }
 
-	        let lambda = 1;
-	        for (let iter = 0; iter < 22; iter += 1) {
-	          let A11 = 0;
-	          let A12 = 0;
-	          let A22 = 0;
-	          let b1 = 0;
-	          let b2 = 0;
-	          for (const c of constraints) {
-	            const dx = x - c.x;
-	            const dy = y - c.y;
-	            const d = Math.hypot(dx, dy) || 1e-6;
-	            const jx = dx / d;
-	            const jy = dy / d;
-	            const resid = d - c.r;
-	            const w = c.w;
-	            A11 += w * jx * jx;
-	            A12 += w * jx * jy;
-	            A22 += w * jy * jy;
-	            b1 += w * jx * resid;
-	            b2 += w * jy * resid;
-	          }
+        let lambda = 1;
+        for (let iter = 0; iter < 22; iter += 1) {
+          let A11 = 0;
+          let A12 = 0;
+          let A22 = 0;
+          let b1 = 0;
+          let b2 = 0;
+          for (const c of constraints) {
+            const dx = x - c.x;
+            const dy = y - c.y;
+            const d = Math.hypot(dx, dy) || 1e-6;
+            const jx = dx / d;
+            const jy = dy / d;
+            const resid = d - c.r;
+            const w = c.w;
+            A11 += w * jx * jx;
+            A12 += w * jx * jy;
+            A22 += w * jy * jy;
+            b1 += w * jx * resid;
+            b2 += w * jy * resid;
+          }
 
-	          A11 += lambda;
-	          A22 += lambda;
-	          const det = A11 * A22 - A12 * A12;
-	          if (!Number.isFinite(det) || Math.abs(det) < 1e-9) break;
-	          const dxStep = (-A22 * b1 + A12 * b2) / det;
-	          const dyStep = (A12 * b1 - A11 * b2) / det;
-	          if (!Number.isFinite(dxStep) || !Number.isFinite(dyStep)) break;
+          A11 += lambda;
+          A22 += lambda;
+          const det = A11 * A22 - A12 * A12;
+          if (!Number.isFinite(det) || Math.abs(det) < 1e-9) break;
+          const dxStep = (-A22 * b1 + A12 * b2) / det;
+          const dyStep = (A12 * b1 - A11 * b2) / det;
+          if (!Number.isFinite(dxStep) || !Number.isFinite(dyStep)) break;
 
-	          const stepMag = Math.hypot(dxStep, dyStep);
-	          x += dxStep;
-	          y += dyStep;
-	          if (stepMag < 0.2) break;
-	        }
-	        return { x, y };
-	      }
+          const stepMag = Math.hypot(dxStep, dyStep);
+          x += dxStep;
+          y += dyStep;
+          if (stepMag < 0.2) break;
+        }
+        return { x, y };
+      }
 
-	      for (const [num, node] of nodeMap.entries()) {
-	        if (hasCoord(node)) continue;
-	        const constraints = constraintsByNode.get(Number(num)) || [];
-	        if (constraints.length < 3) continue;
-	        const solved = solveMultilateration(constraints);
-	        posByNum.set(Number(num), solved);
-	        strongNums.add(Number(num));
-	      }
+      for (const [num, node] of nodeMap.entries()) {
+        if (hasCoord(node)) continue;
+        const constraints = constraintsByNode.get(Number(num)) || [];
+        if (constraints.length < 3) continue;
+        const solved = solveMultilateration(constraints);
+        posByNum.set(Number(num), solved);
+        strongNums.add(Number(num));
+      }
 
-	      function neighborHint(num) {
-	        const neighbors = adj.get(Number(num));
-	        if (!neighbors) return null;
-	        let x = 0;
-	        let y = 0;
-	        let count = 0;
-	        for (const nxt of neighbors.keys()) {
-	          const p = posByNum.get(Number(nxt));
-	          if (!p) continue;
-	          x += p.x;
-	          y += p.y;
-	          count += 1;
-	        }
-	        if (!count) return null;
-	        return { x: x / count, y: y / count };
-	      }
+      function neighborHint(num) {
+        const neighbors = adj.get(Number(num));
+        if (!neighbors) return null;
+        let x = 0;
+        let y = 0;
+        let count = 0;
+        for (const nxt of neighbors.keys()) {
+          const p = posByNum.get(Number(nxt));
+          if (!p) continue;
+          x += p.x;
+          y += p.y;
+          count += 1;
+        }
+        if (!count) return null;
+        return { x: x / count, y: y / count };
+      }
 
-	      function circleIntersections(a, r1, b, r2) {
-	        const dx = b.x - a.x;
-	        const dy = b.y - a.y;
-	        const d = Math.hypot(dx, dy);
-	        if (!Number.isFinite(d) || d < 1e-6) return [];
-	        if (d > r1 + r2) return [];
-	        if (d < Math.abs(r1 - r2)) return [];
-	        const t = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
-	        const h2 = Math.max(0, r1 * r1 - t * t);
-	        const h = Math.sqrt(h2);
-	        const ux = dx / d;
-	        const uy = dy / d;
-	        const px = a.x + ux * t;
-	        const py = a.y + uy * t;
-	        const rx = -uy * h;
-	        const ry = ux * h;
-	        return [
-	          { x: px + rx, y: py + ry },
-	          { x: px - rx, y: py - ry },
-	        ];
-	      }
+      function circleIntersections(a, r1, b, r2) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy);
+        if (!Number.isFinite(d) || d < 1e-6) return [];
+        if (d > r1 + r2) return [];
+        if (d < Math.abs(r1 - r2)) return [];
+        const t = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+        const h2 = Math.max(0, r1 * r1 - t * t);
+        const h = Math.sqrt(h2);
+        const ux = dx / d;
+        const uy = dy / d;
+        const px = a.x + ux * t;
+        const py = a.y + uy * t;
+        const rx = -uy * h;
+        const ry = ux * h;
+        return [
+          { x: px + rx, y: py + ry },
+          { x: px - rx, y: py - ry },
+        ];
+      }
 
-	      function placeWithTwoAnchors(num, c1, c2, hint) {
-	        const a = { x: c1.x, y: c1.y };
-	        const b = { x: c2.x, y: c2.y };
-	        const r1 = c1.r;
-	        const r2 = c2.r;
-	        const ints = circleIntersections(a, r1, b, r2);
-	        if (ints.length === 2) {
-	          if (hint) {
-	            const d0 = Math.hypot(ints[0].x - hint.x, ints[0].y - hint.y);
-	            const d1 = Math.hypot(ints[1].x - hint.x, ints[1].y - hint.y);
-	            return d0 <= d1 ? ints[0] : ints[1];
-	          }
-	          // Deterministic tie-break.
-	          const pick = (Math.abs(Number(num)) % 2) === 0 ? ints[0] : ints[1];
-	          return pick;
-	        }
+      function placeWithTwoAnchors(num, c1, c2, hint) {
+        const a = { x: c1.x, y: c1.y };
+        const b = { x: c2.x, y: c2.y };
+        const r1 = c1.r;
+        const r2 = c2.r;
+        const ints = circleIntersections(a, r1, b, r2);
+        if (ints.length === 2) {
+          if (hint) {
+            const d0 = Math.hypot(ints[0].x - hint.x, ints[0].y - hint.y);
+            const d1 = Math.hypot(ints[1].x - hint.x, ints[1].y - hint.y);
+            return d0 <= d1 ? ints[0] : ints[1];
+          }
+          // Deterministic tie-break.
+          const pick = (Math.abs(Number(num)) % 2) === 0 ? ints[0] : ints[1];
+          return pick;
+        }
 
-	        const dx = b.x - a.x;
-	        const dy = b.y - a.y;
-	        const d = Math.hypot(dx, dy) || 1e-6;
-	        const t = r1 + r2 > 1e-6 ? Math.max(0, Math.min(1, r1 / (r1 + r2))) : 0.5;
-	        let x = a.x + (dx / d) * d * t;
-	        let y = a.y + (dy / d) * d * t;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 1e-6;
+        const t = r1 + r2 > 1e-6 ? Math.max(0, Math.min(1, r1 / (r1 + r2))) : 0.5;
+        let x = a.x + (dx / d) * d * t;
+        let y = a.y + (dy / d) * d * t;
 
-		        // Nudge off the line so multiple nodes don't stack exactly.
-		        const angle = ((Math.abs(Number(num)) % 360) * Math.PI) / 180;
-		        const nudge = Math.min(0.22 * globalMetersPerUnit, 120);
-		        x += Math.cos(angle) * nudge;
-		        y += Math.sin(angle) * nudge;
-		        return { x, y };
-		      }
+        // Nudge off the line so multiple nodes don't stack exactly.
+        const angle = ((Math.abs(Number(num)) % 360) * Math.PI) / 180;
+        const nudge = Math.min(0.22 * globalMetersPerUnit, 120);
+        x += Math.cos(angle) * nudge;
+        y += Math.sin(angle) * nudge;
+        return { x, y };
+      }
 
-	      function placeWithOneAnchor(num, c1, hint) {
-	        const base = { x: c1.x, y: c1.y };
-	        const r = c1.r;
-	        let angle = ((Math.abs(Number(num)) % 360) * Math.PI) / 180;
-	        if (hint) {
-	          angle = Math.atan2(hint.y - base.y, hint.x - base.x);
-	        }
-	        return {
-	          x: base.x + Math.cos(angle) * r,
-	          y: base.y + Math.sin(angle) * r,
-	        };
-	      }
+      function placeWithOneAnchor(num, c1, hint) {
+        const base = { x: c1.x, y: c1.y };
+        const r = c1.r;
+        let angle = ((Math.abs(Number(num)) % 360) * Math.PI) / 180;
+        if (hint) {
+          angle = Math.atan2(hint.y - base.y, hint.x - base.x);
+        }
+        return {
+          x: base.x + Math.cos(angle) * r,
+          y: base.y + Math.sin(angle) * r,
+        };
+      }
 
-	      // Fill remaining nodes using whatever constraints exist, in a few passes so
-	      // neighbor hints become available.
-	      for (let pass = 0; pass < 5; pass += 1) {
-	        let progressed = false;
-	        for (const [num, node] of nodeMap.entries()) {
-	          if (hasCoord(node) || posByNum.has(Number(num))) continue;
-	          const constraints = constraintsByNode.get(Number(num)) || [];
-	          if (!constraints.length) continue;
-	          const hint = neighborHint(Number(num));
+      // Fill remaining nodes using whatever constraints exist, in a few passes so
+      // neighbor hints become available.
+      for (let pass = 0; pass < 5; pass += 1) {
+        let progressed = false;
+        for (const [num, node] of nodeMap.entries()) {
+          if (hasCoord(node) || posByNum.has(Number(num))) continue;
+          const constraints = constraintsByNode.get(Number(num)) || [];
+          if (!constraints.length) continue;
+          const hint = neighborHint(Number(num));
 
-	          if (constraints.length >= 3) {
-	            const solved = solveMultilateration(constraints);
-	            posByNum.set(Number(num), solved);
-	            strongNums.add(Number(num));
-	            progressed = true;
-	            continue;
-	          }
-	          if (constraints.length === 2) {
-	            const placed = placeWithTwoAnchors(Number(num), constraints[0], constraints[1], hint);
-	            posByNum.set(Number(num), placed);
-	            progressed = true;
-	            continue;
-	          }
-	          if (constraints.length === 1) {
-	            const placed = placeWithOneAnchor(Number(num), constraints[0], hint);
-	            posByNum.set(Number(num), placed);
-	            progressed = true;
-	            continue;
-	          }
-	        }
-	        if (!progressed) break;
-	      }
+          if (constraints.length >= 3) {
+            const solved = solveMultilateration(constraints);
+            posByNum.set(Number(num), solved);
+            strongNums.add(Number(num));
+            progressed = true;
+            continue;
+          }
+          if (constraints.length === 2) {
+            const placed = placeWithTwoAnchors(Number(num), constraints[0], constraints[1], hint);
+            posByNum.set(Number(num), placed);
+            progressed = true;
+            continue;
+          }
+          if (constraints.length === 1) {
+            const placed = placeWithOneAnchor(Number(num), constraints[0], hint);
+            posByNum.set(Number(num), placed);
+            progressed = true;
+            continue;
+          }
+        }
+        if (!progressed) break;
+      }
 
-		      function mobility(num) {
-		        if (fixedNums.has(Number(num))) return 0;
-		        if (strongNums.has(Number(num))) return 0.25;
-		        return 1;
-		      }
+      function mobility(num) {
+        if (fixedNums.has(Number(num))) return 0;
+        if (strongNums.has(Number(num))) return 0.25;
+        return 1;
+      }
 
-		      // Small spring relaxation pass to reduce local edge distortion while keeping
-		      // well-anchored nodes mostly stable.
-		      const SPRING_ITERS = 28;
-		      const SPRING_ALPHA = 0.08;
-		      for (let iter = 0; iter < SPRING_ITERS; iter += 1) {
-		        for (const [uRaw, neighbors] of adj.entries()) {
-		          const u = Number(uRaw);
-		          for (const [vRaw, meta] of neighbors.entries()) {
-		            const v = Number(vRaw);
-		            if (u >= v) continue; // handle each undirected edge once
-		            const pu = posByNum.get(u);
-		            const pv = posByNum.get(v);
-		            if (!pu || !pv) continue;
-	            const dx = pv.x - pu.x;
-		            const dy = pv.y - pu.y;
-		            const dist = Math.hypot(dx, dy);
-		            if (!Number.isFinite(dist) || dist < 1e-6) continue;
-		            const desired = edgeCostUnits(meta) * globalMetersPerUnit;
-		            if (!Number.isFinite(desired) || desired <= 0) continue;
-		            const weight = edgeSpringWeight(meta);
-		            const err = dist - desired;
-		            const maxStep = 0.45 * desired;
-		            let step = SPRING_ALPHA * weight * err;
-	            step = Math.max(-maxStep, Math.min(maxStep, step));
+      // Small spring relaxation pass to reduce local edge distortion while keeping
+      // well-anchored nodes mostly stable.
+      const SPRING_ITERS = 28;
+      const SPRING_ALPHA = 0.08;
+      for (let iter = 0; iter < SPRING_ITERS; iter += 1) {
+        for (const [uRaw, neighbors] of adj.entries()) {
+          const u = Number(uRaw);
+          for (const [vRaw, meta] of neighbors.entries()) {
+            const v = Number(vRaw);
+            if (u >= v) continue; // handle each undirected edge once
+            const pu = posByNum.get(u);
+            const pv = posByNum.get(v);
+            if (!pu || !pv) continue;
+            const dx = pv.x - pu.x;
+            const dy = pv.y - pu.y;
+            const dist = Math.hypot(dx, dy);
+            if (!Number.isFinite(dist) || dist < 1e-6) continue;
+            const desired = edgeCostUnits(meta) * globalMetersPerUnit;
+            if (!Number.isFinite(desired) || desired <= 0) continue;
+            const weight = edgeSpringWeight(meta);
+            const err = dist - desired;
+            const maxStep = 0.45 * desired;
+            let step = SPRING_ALPHA * weight * err;
+            step = Math.max(-maxStep, Math.min(maxStep, step));
 
-	            const ux = dx / dist;
-	            const uy = dy / dist;
-	            const mu = mobility(u);
-	            const mv = mobility(v);
-	            const total = mu + mv;
-	            if (total <= 0) continue;
-	            const du = (mu / total) * step;
-	            const dv = (mv / total) * step;
-	            if (mu > 0) {
-	              pu.x += ux * du;
-	              pu.y += uy * du;
-	            }
-	            if (mv > 0) {
-	              pv.x -= ux * dv;
-	              pv.y -= uy * dv;
-	            }
-	          }
-	        }
-	      }
+            const ux = dx / dist;
+            const uy = dy / dist;
+            const mu = mobility(u);
+            const mv = mobility(v);
+            const total = mu + mv;
+            if (total <= 0) continue;
+            const du = (mu / total) * step;
+            const dv = (mv / total) * step;
+            if (mu > 0) {
+              pu.x += ux * du;
+              pu.y += uy * du;
+            }
+            if (mv > 0) {
+              pv.x -= ux * dv;
+              pv.y -= uy * dv;
+            }
+          }
+        }
+      }
 
-	      for (const [num, p] of posByNum.entries()) {
-	        const node = nodeMap.get(Number(num));
-	        if (!node) continue;
-	        if (hasCoord(node)) continue; // never overwrite GPS
-	        const ll = xyToLL(p.x, p.y);
-	        if (!Number.isFinite(ll.lat) || !Number.isFinite(ll.lon)) continue;
-	        node.lat = ll.lat;
-	        node.lon = ll.lon;
-	        node.estimated = true;
-	      }
+      for (const [num, p] of posByNum.entries()) {
+        const node = nodeMap.get(Number(num));
+        if (!node) continue;
+        if (hasCoord(node)) continue; // never overwrite GPS
+        const ll = xyToLL(p.x, p.y);
+        if (!Number.isFinite(ll.lat) || !Number.isFinite(ll.lon)) continue;
+        node.lat = ll.lat;
+        node.lon = ll.lon;
+        node.estimated = true;
+      }
 
-	      return nodeMap;
-	    }
+      return nodeMap;
+    }
 
     function renderLogs(logs) {
       const container = document.getElementById("logList");
@@ -2559,16 +2622,16 @@ MAP_HTML = """<!doctype html>
             line.setStyle({ color: baseColor, weight: 3, opacity: 0.5 });
             continue;
           }
-	          if (traceId === state.selectedTraceId) {
-	            const selectedColor = ROUTE_SELECTED_COLORS[direction];
-	            line.setStyle({ color: selectedColor, weight: 6, opacity: 0.98 });
-	          } else {
-	            // Hide non-selected traceroute lines entirely while a trace is selected.
-	            line.setStyle({ color: baseColor, weight: 0, opacity: 0.0 });
-	          }
-	        }
-	      }
-	    }
+          if (traceId === state.selectedTraceId) {
+            const selectedColor = ROUTE_SELECTED_COLORS[direction];
+            line.setStyle({ color: selectedColor, weight: 6, opacity: 0.98 });
+          } else {
+            // Hide non-selected traceroute lines entirely while a trace is selected.
+            line.setStyle({ color: baseColor, weight: 0, opacity: 0.0 });
+          }
+        }
+      }
+    }
 
     function focusNode(nodeNum, options = {}) {
       if (!Number.isFinite(nodeNum)) return;
@@ -2704,7 +2767,7 @@ MAP_HTML = """<!doctype html>
         bounds.push(ll);
         const labelText = nodeLabel(node);
         const label = escapeHtml(labelText);
-        const cssClass = nodeClass(node, nowSec);
+        const cssClass = nodeClass(node, nowSec, data && data.config);
         const width = Math.max(30, Math.min(92, 18 + labelText.length * 9));
         const height = 30;
         const icon = L.divIcon({
@@ -2736,6 +2799,7 @@ MAP_HTML = """<!doctype html>
 
       updateConnectionUi(data);
       updateConfigUi(data);
+      updateFreshnessLegend(data && data.config);
       const nodeTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "nodes");
       if (nodeTab) nodeTab.textContent = `Nodes (${String(data.node_count || 0)})`;
       const traceTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "traces");
@@ -2900,6 +2964,8 @@ MAP_HTML = """<!doctype html>
       if (!config) return;
       if (cfgInterval) cfgInterval.value = String(config.interval ?? "");
       if (cfgHeardWindow) cfgHeardWindow.value = String(config.heard_window ?? "");
+      if (cfgFreshWindow) cfgFreshWindow.value = String(config.fresh_window ?? "");
+      if (cfgMidWindow) cfgMidWindow.value = String(config.mid_window ?? "");
       if (cfgHopLimit) cfgHopLimit.value = String(config.hop_limit ?? "");
       if (cfgMaxMapTraces) cfgMaxMapTraces.value = String(config.max_map_traces ?? "");
       if (cfgMaxStoredTraces) cfgMaxStoredTraces.value = String(config.max_stored_traces ?? "");
@@ -2954,6 +3020,8 @@ MAP_HTML = """<!doctype html>
       const payload = {
         interval: asInt(cfgInterval?.value, 5),
         heard_window: asInt(cfgHeardWindow?.value, 120),
+        fresh_window: asInt(cfgFreshWindow?.value, 120),
+        mid_window: asInt(cfgMidWindow?.value, 480),
         hop_limit: asInt(cfgHopLimit?.value, 7),
         max_map_traces: asInt(cfgMaxMapTraces?.value, 800),
         max_stored_traces: asInt(cfgMaxStoredTraces?.value, 50000),
@@ -2983,10 +3051,12 @@ MAP_HTML = """<!doctype html>
       refresh();
     }
 
-	    function resetConfig() {
+    function resetConfig() {
       const defaults = state.configDefaults || {
         interval: 5,
         heard_window: 120,
+        fresh_window: 120,
+        mid_window: 480,
         hop_limit: 7,
         webhook_url: null,
         webhook_api_token: null,
@@ -2998,7 +3068,7 @@ MAP_HTML = """<!doctype html>
       setCfgStatus("Reset to defaults (not applied).", { error: false });
     }
 
-	    const HELP_COPY = {
+    const HELP_COPY = {
       interval: {
         title: "Interval (minutes)",
         body: `How often Meshtracer attempts a traceroute.
@@ -3010,6 +3080,16 @@ This is a start-to-start target cadence. If a traceroute takes a long time, Mesh
         body: `Only nodes heard within this many minutes are eligible as traceroute targets.
 
 Larger values include more nodes (including stale ones). Smaller values focus on recently-active nodes.`,
+      },
+      fresh_window: {
+        title: "Fresh Window (minutes)",
+        body: `Nodes heard within this many minutes are shown as Fresh (green) in the map legend.`,
+      },
+      mid_window: {
+        title: "Mid Window (minutes)",
+        body: `Nodes heard within this many minutes are shown as Mid (yellow). Older nodes are Stale (red).
+
+Must be >= Fresh Window.`,
       },
       hop_limit: {
         title: "Hop Limit",
@@ -3172,6 +3252,8 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     for (const el of [
       cfgInterval,
       cfgHeardWindow,
+      cfgFreshWindow,
+      cfgMidWindow,
       cfgHopLimit,
       cfgMaxMapTraces,
       cfgMaxStoredTraces,

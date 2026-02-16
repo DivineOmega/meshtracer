@@ -28,6 +28,8 @@ from .webhook import post_webhook
 DEFAULT_RUNTIME_CONFIG: dict[str, Any] = {
     "interval": 5,
     "heard_window": 120,
+    "fresh_window": 120,
+    "mid_window": 480,
     "hop_limit": 7,
     "webhook_url": None,
     "webhook_api_token": None,
@@ -141,7 +143,15 @@ class MeshTracerController:
                 return None
             return str(value)
 
-        for key in ["interval", "heard_window", "hop_limit", "max_map_traces", "max_stored_traces"]:
+        for key in [
+            "interval",
+            "heard_window",
+            "fresh_window",
+            "mid_window",
+            "hop_limit",
+            "max_map_traces",
+            "max_stored_traces",
+        ]:
             value = pick_int(key)
             if value is None:
                 continue
@@ -188,6 +198,8 @@ class MeshTracerController:
         try:
             interval = pick_int("interval")
             heard_window = pick_int("heard_window")
+            fresh_window = pick_int("fresh_window")
+            mid_window = pick_int("mid_window")
             hop_limit = pick_int("hop_limit")
             max_map_traces = pick_int("max_map_traces")
             max_stored_traces = pick_int("max_stored_traces")
@@ -198,6 +210,23 @@ class MeshTracerController:
             return False, "interval must be > 0", None
         if heard_window is not None and heard_window <= 0:
             return False, "heard_window must be > 0", None
+        if fresh_window is not None and fresh_window <= 0:
+            return False, "fresh_window must be > 0", None
+        if mid_window is not None and mid_window <= 0:
+            return False, "mid_window must be > 0", None
+
+        candidate_fresh = (
+            fresh_window
+            if fresh_window is not None
+            else int(current.get("fresh_window") or DEFAULT_RUNTIME_CONFIG["fresh_window"])
+        )
+        candidate_mid = (
+            mid_window
+            if mid_window is not None
+            else int(current.get("mid_window") or DEFAULT_RUNTIME_CONFIG["mid_window"])
+        )
+        if candidate_mid < candidate_fresh:
+            return False, "mid_window must be >= fresh_window", None
         if hop_limit is not None and hop_limit <= 0:
             return False, "hop_limit must be > 0", None
         if max_map_traces is not None and max_map_traces <= 0:
@@ -213,6 +242,10 @@ class MeshTracerController:
             new_config["interval"] = interval
         if heard_window is not None:
             new_config["heard_window"] = heard_window
+        if fresh_window is not None:
+            new_config["fresh_window"] = fresh_window
+        if mid_window is not None:
+            new_config["mid_window"] = mid_window
         if hop_limit is not None:
             new_config["hop_limit"] = hop_limit
         if max_map_traces is not None:
@@ -276,6 +309,7 @@ class MeshTracerController:
         self._emit(
             f"[{utc_now()}] Config updated: interval={new_config['interval']}m "
             f"heard_window={new_config['heard_window']}m hop_limit={new_config['hop_limit']} "
+            f"fresh_window={new_config['fresh_window']}m mid_window={new_config['mid_window']}m "
             f"webhook={webhook_on}"
         )
         return True, "updated"
