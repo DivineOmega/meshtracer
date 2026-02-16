@@ -27,6 +27,39 @@ def _result(node_num: int) -> dict:
 
 
 class SQLiteStoreTests(unittest.TestCase):
+    def test_runtime_config_persists_across_store_instances(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                store.set_runtime_config(
+                    {
+                        "interval": 9,
+                        "heard_window": 42,
+                        "hop_limit": 3,
+                        "webhook_url": "https://example.com/hook",
+                        "webhook_api_token": "secret",
+                        "max_map_traces": 12,
+                        "max_stored_traces": 1234,
+                    }
+                )
+            finally:
+                store.close()
+
+            store2 = SQLiteStore(str(db_path))
+            try:
+                loaded = store2.get_runtime_config()
+                self.assertIsInstance(loaded, dict)
+                self.assertEqual(loaded.get("interval"), 9)
+                self.assertEqual(loaded.get("heard_window"), 42)
+                self.assertEqual(loaded.get("hop_limit"), 3)
+                self.assertEqual(loaded.get("webhook_url"), "https://example.com/hook")
+                self.assertEqual(loaded.get("webhook_api_token"), "secret")
+                self.assertEqual(loaded.get("max_map_traces"), 12)
+                self.assertEqual(loaded.get("max_stored_traces"), 1234)
+            finally:
+                store2.close()
+
     def test_add_traceroute_prunes_to_max_keep(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"

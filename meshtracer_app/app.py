@@ -68,7 +68,31 @@ class MeshTracerController:
         self._connection_error: str | None = None
         self._discovery = LanDiscoverer()
         self._discovery.set_enabled(False)
-        self._config: dict[str, Any] = self._config_from_args(args)
+        self._config: dict[str, Any] = deepcopy(DEFAULT_RUNTIME_CONFIG)
+        persisted_config: dict[str, Any] | None = None
+        try:
+            persisted_config = store.get_runtime_config("global")
+        except Exception as exc:
+            self._emit_error(f"[{utc_now()}] Warning: failed to load saved config from SQLite: {exc}")
+
+        ok, detail, initial_config = self._merge_runtime_config(
+            dict(self._config),
+            persisted_config if isinstance(persisted_config, dict) else {},
+        )
+        if not ok or initial_config is None:
+            if persisted_config:
+                self._emit_error(
+                    f"[{utc_now()}] Warning: ignoring invalid saved config from SQLite: {detail}"
+                )
+            initial_config = dict(self._config)
+
+        arg_overrides = self._config_overrides_from_args(args)
+        ok, detail, merged_config = self._merge_runtime_config(initial_config, arg_overrides)
+        if not ok or merged_config is None:
+            self._emit_error(f"[{utc_now()}] Warning: ignoring invalid CLI config overrides: {detail}")
+            merged_config = initial_config
+
+        self._config = merged_config
 
     @staticmethod
     def _config_from_args(args: Any) -> dict[str, Any]:
@@ -98,18 +122,48 @@ class MeshTracerController:
         config["webhook_api_token"] = pick_str("webhook_api_token")
         return config
 
-    def get_config(self) -> dict[str, Any]:
-        with self._lock:
-            return dict(self._config)
+    @staticmethod
+    def _config_overrides_from_args(args: Any) -> dict[str, Any]:
+        update: dict[str, Any] = {}
 
-    def set_config(self, update: dict[str, Any]) -> tuple[bool, str]:
+        def pick_int(name: str) -> int | None:
+            value = getattr(args, name, None)
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        def pick_any_str(name: str) -> str | None:
+            value = getattr(args, name, None)
+            if value is None:
+                return None
+            return str(value)
+
+        for key in ["interval", "heard_window", "hop_limit", "max_map_traces", "max_stored_traces"]:
+            value = pick_int(key)
+            if value is None:
+                continue
+            if value != int(DEFAULT_RUNTIME_CONFIG[key]):
+                update[key] = value
+
+        webhook_url = pick_any_str("webhook_url")
+        if webhook_url is not None:
+            update["webhook_url"] = webhook_url
+
+        webhook_api_token = pick_any_str("webhook_api_token")
+        if webhook_api_token is not None:
+            update["webhook_api_token"] = webhook_api_token
+
+        return update
+
+    @staticmethod
+    def _merge_runtime_config(
+        current: dict[str, Any], update: dict[str, Any]
+    ) -> tuple[bool, str, dict[str, Any] | None]:
         if not isinstance(update, dict):
-            return False, "expected an object"
-
-        with self._lock:
-            current = dict(self._config)
-            interface = self._interface
-            map_state = self._map_state
+            return False, "expected an object", None
 
         def pick_int(name: str) -> int | None:
             if name not in update:
@@ -138,18 +192,18 @@ class MeshTracerController:
             max_map_traces = pick_int("max_map_traces")
             max_stored_traces = pick_int("max_stored_traces")
         except ValueError as exc:
-            return False, str(exc)
+            return False, str(exc), None
 
         if interval is not None and interval <= 0:
-            return False, "interval must be > 0"
+            return False, "interval must be > 0", None
         if heard_window is not None and heard_window <= 0:
-            return False, "heard_window must be > 0"
+            return False, "heard_window must be > 0", None
         if hop_limit is not None and hop_limit <= 0:
-            return False, "hop_limit must be > 0"
+            return False, "hop_limit must be > 0", None
         if max_map_traces is not None and max_map_traces <= 0:
-            return False, "max_map_traces must be > 0"
+            return False, "max_map_traces must be > 0", None
         if max_stored_traces is not None and max_stored_traces < 0:
-            return False, "max_stored_traces must be >= 0"
+            return False, "max_stored_traces must be >= 0", None
 
         webhook_url = pick_str("webhook_url")
         webhook_api_token = pick_str("webhook_api_token")
@@ -169,6 +223,32 @@ class MeshTracerController:
             new_config["webhook_url"] = webhook_url
         if webhook_api_token is not None or "webhook_api_token" in update:
             new_config["webhook_api_token"] = webhook_api_token
+
+        # Ensure keys exist even if older DB entries were partial.
+        for key, value in DEFAULT_RUNTIME_CONFIG.items():
+            if key not in new_config:
+                new_config[key] = value
+
+        return True, "updated", new_config
+
+    def get_config(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._config)
+
+    def set_config(self, update: dict[str, Any]) -> tuple[bool, str]:
+        with self._lock:
+            current = dict(self._config)
+            interface = self._interface
+            map_state = self._map_state
+
+        ok, detail, new_config = self._merge_runtime_config(current, update)
+        if not ok or new_config is None:
+            return False, detail
+
+        try:
+            self._store.set_runtime_config(new_config, "global")
+        except Exception as exc:
+            return False, f"failed to save config to SQLite: {exc}"
 
         with self._lock:
             self._config = new_config

@@ -141,11 +141,13 @@ Map data behavior:
 - For nodes without GPS coordinates, map positions are estimated from traceroute order/adjacency when possible.
 - Traceroute-only unknown hop IDs are also synthesized into map nodes (short name = last 4 hex chars) and estimated the same way, so their surrounding segments can render.
 - Map/API data is loaded from SQLite history for the currently connected mesh-node partition.
-- The map includes a resizable/collapsible right sidebar with 4 tabs:
+- The map includes a resizable/collapsible right sidebar with 3 tabs:
   - `Log`: runtime lines mirrored from terminal output
   - `Nodes`: known nodes list
   - `Traces`: 50 most recent completed traceroutes
-  - `Config`: runtime settings (interval/heard window/hop limit/webhook/storage)
+- A settings (cog) button in the sidebar header opens the `Config` modal: runtime settings (interval/heard window/hop limit/webhook/storage)
+- Config changes are saved into the SQLite database and restored on restart.
+- Webhook API tokens are stored in SQLite in plaintext.
 - Interactions:
   - Clicking a node marker on the map selects that node, switches to the `Nodes` tab, and highlights the matching node list item
   - Clicking a node in `Nodes` highlights and pans/zooms to that node marker

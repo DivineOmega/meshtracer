@@ -116,11 +116,18 @@ MAP_HTML = """<!doctype html>
     }
     .head-row {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
       gap: 10px;
       margin-bottom: 8px;
       padding-right: 28px;
+    }
+    .head-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 0;
     }
     .head-title {
       font-size: 14px;
@@ -135,6 +142,31 @@ MAP_HTML = """<!doctype html>
       overflow: hidden;
       text-overflow: ellipsis;
       max-width: 160px;
+    }
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #2d4065;
+      border-radius: 10px;
+      background: rgba(16, 26, 52, 0.92);
+      color: #cfe0ff;
+      cursor: pointer;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+    .icon-btn:hover {
+      background: rgba(20, 35, 69, 0.98);
+    }
+    .icon-btn:focus-visible {
+      outline: 2px solid rgba(82, 137, 221, 0.72);
+      outline-offset: 2px;
+    }
+    .icon-btn svg {
+      width: 16px;
+      height: 16px;
     }
     .mesh-host-row {
       display: flex;
@@ -410,7 +442,7 @@ MAP_HTML = """<!doctype html>
     }
     .stats {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 6px;
       margin-bottom: 8px;
     }
@@ -456,7 +488,7 @@ MAP_HTML = """<!doctype html>
 
     #tabs {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
       gap: 6px;
       padding: 8px 12px 8px 12px;
       border-bottom: 1px solid #273957;
@@ -697,6 +729,78 @@ MAP_HTML = """<!doctype html>
     .cfg-readonly code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       color: #d8e3fb;
+    }
+    .config-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 2500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .config-modal.hidden {
+      display: none;
+    }
+    .config-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(7, 10, 18, 0.62);
+      backdrop-filter: blur(2px);
+    }
+    .config-card {
+      position: relative;
+      width: min(560px, 100%);
+      max-height: min(760px, calc(100vh - 40px));
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(10, 18, 35, 0.92);
+      border-radius: 16px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+      padding: 14px 14px 12px 14px;
+      backdrop-filter: blur(4px);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+    .config-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .config-title {
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #eef5ff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .config-close {
+      width: 26px;
+      height: 26px;
+      border: 1px solid #2d4065;
+      border-radius: 10px;
+      background: rgba(16, 26, 52, 0.92);
+      color: #cfe0ff;
+      font-weight: 900;
+      cursor: pointer;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+    .config-close:hover {
+      background: rgba(20, 35, 69, 0.98);
+    }
+    .config-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 10px 12px 12px 12px;
+      box-sizing: border-box;
     }
     .help-modal {
       position: fixed;
@@ -1046,7 +1150,15 @@ MAP_HTML = """<!doctype html>
       <div id="sidebarHeader">
         <div class="head-row">
           <div class="head-title">Meshtracer</div>
-          <div id="updated" class="head-updated">-</div>
+          <div class="head-actions">
+            <div id="updated" class="head-updated">-</div>
+            <button id="configOpen" class="icon-btn" type="button" aria-label="Open config">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="mesh-host-row">
           <div id="meshHost" class="mesh-host">-</div>
@@ -1056,7 +1168,6 @@ MAP_HTML = """<!doctype html>
         <div class="stats">
           <div class="stat"><span class="stat-k">Nodes</span><span id="nodeCount" class="stat-v">0</span></div>
           <div class="stat"><span class="stat-k">Traces</span><span id="traceCount" class="stat-v">0</span></div>
-          <div class="stat"><span class="stat-k">Edges</span><span id="edgeCount" class="stat-v">0</span></div>
         </div>
         <div class="legend">
           <span><span class="dot dot-fresh"></span>Fresh</span>
@@ -1069,7 +1180,6 @@ MAP_HTML = """<!doctype html>
         <button type="button" class="tab-btn active" data-tab="log">Log</button>
         <button type="button" class="tab-btn" data-tab="nodes">Nodes</button>
         <button type="button" class="tab-btn" data-tab="traces">Traces</button>
-        <button type="button" class="tab-btn" data-tab="config">Config</button>
       </div>
 
       <div id="panels">
@@ -1097,88 +1207,96 @@ MAP_HTML = """<!doctype html>
         <section class="panel" data-panel="traces">
           <div id="traceList" class="scroll-list"></div>
         </section>
-        <section class="panel" data-panel="config">
-          <div class="scroll-list">
-            <div class="cfg-section">
-              <div class="cfg-title">Traceroute</div>
-              <div class="cfg-grid">
-                <div class="cfg-field">
-                  <div class="cfg-label-row">
-                    <label class="cfg-label" for="cfgInterval">Interval (minutes)</label>
-                    <button type="button" class="cfg-help" data-help="interval" aria-label="Help for interval">?</button>
-                  </div>
-                  <input id="cfgInterval" class="cfg-input" type="number" min="1" step="1">
-                </div>
-                <div class="cfg-field">
-                  <div class="cfg-label-row">
-                    <label class="cfg-label" for="cfgHeardWindow">Heard Window (minutes)</label>
-                    <button type="button" class="cfg-help" data-help="heard_window" aria-label="Help for heard window">?</button>
-                  </div>
-                  <input id="cfgHeardWindow" class="cfg-input" type="number" min="1" step="1">
-                </div>
-                <div class="cfg-field">
-                  <div class="cfg-label-row">
-                    <label class="cfg-label" for="cfgHopLimit">Hop Limit</label>
-                    <button type="button" class="cfg-help" data-help="hop_limit" aria-label="Help for hop limit">?</button>
-                  </div>
-                  <input id="cfgHopLimit" class="cfg-input" type="number" min="1" step="1">
-                </div>
-              </div>
-            </div>
-            <div class="cfg-section">
-              <div class="cfg-title">Storage</div>
-              <div class="cfg-grid">
-                <div class="cfg-field">
-                  <div class="cfg-label-row">
-                    <label class="cfg-label" for="cfgMaxMapTraces">Max Map Traces</label>
-                    <button type="button" class="cfg-help" data-help="max_map_traces" aria-label="Help for max map traces">?</button>
-                  </div>
-                  <input id="cfgMaxMapTraces" class="cfg-input" type="number" min="1" step="1">
-                </div>
-                <div class="cfg-field">
-                  <div class="cfg-label-row">
-                    <label class="cfg-label" for="cfgMaxStoredTraces">Max Stored Traces (0 disables pruning)</label>
-                    <button type="button" class="cfg-help" data-help="max_stored_traces" aria-label="Help for max stored traces">?</button>
-                  </div>
-                  <input id="cfgMaxStoredTraces" class="cfg-input" type="number" min="0" step="1">
-                </div>
-              </div>
-            </div>
-            <div class="cfg-section">
-              <div class="cfg-title">Webhook</div>
-              <div class="cfg-grid">
-                <div class="cfg-field">
-                  <div class="cfg-label-row">
-                    <label class="cfg-label" for="cfgWebhookUrl">Webhook URL</label>
-                    <button type="button" class="cfg-help" data-help="webhook_url" aria-label="Help for webhook url">?</button>
-                  </div>
-                  <input id="cfgWebhookUrl" class="cfg-input" type="text" placeholder="https://example.com/hook">
-                </div>
-                <div class="cfg-field">
-                  <div class="cfg-label-row">
-                    <label class="cfg-label" for="cfgWebhookToken">Webhook API Token</label>
-                    <button type="button" class="cfg-help" data-help="webhook_api_token" aria-label="Help for webhook api token">?</button>
-                  </div>
-                  <input id="cfgWebhookToken" class="cfg-input" type="password" placeholder="(optional)">
-                </div>
-              </div>
-            </div>
-
-            <div class="cfg-actions">
-              <button id="cfgApply" class="cfg-btn" type="button">Apply</button>
-              <button id="cfgReset" class="cfg-btn secondary" type="button">Reset</button>
-            </div>
-            <div id="cfgStatus" class="cfg-status"></div>
-            <div class="cfg-readonly">
-              <div>Server settings are controlled by CLI args and require restart.</div>
-              <div>DB: <code id="cfgDbPath">-</code></div>
-              <div>UI bind: <code id="cfgUiBind">-</code></div>
-            </div>
-          </div>
-        </section>
       </div>
     </div>
   </aside>
+
+  <section id="configModal" class="config-modal hidden" aria-label="Config" role="dialog" aria-modal="true">
+    <div id="configOverlay" class="config-overlay" aria-hidden="true"></div>
+    <div class="config-card" role="document">
+      <div class="config-head">
+        <div class="config-title">Config</div>
+        <button id="configClose" class="config-close" type="button" aria-label="Close config">X</button>
+      </div>
+      <div class="config-body">
+        <div class="cfg-section">
+          <div class="cfg-title">Traceroute</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgInterval">Interval (minutes)</label>
+                <button type="button" class="cfg-help" data-help="interval" aria-label="Help for interval">?</button>
+              </div>
+              <input id="cfgInterval" class="cfg-input" type="number" min="1" step="1">
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgHeardWindow">Heard Window (minutes)</label>
+                <button type="button" class="cfg-help" data-help="heard_window" aria-label="Help for heard window">?</button>
+              </div>
+              <input id="cfgHeardWindow" class="cfg-input" type="number" min="1" step="1">
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgHopLimit">Hop Limit</label>
+                <button type="button" class="cfg-help" data-help="hop_limit" aria-label="Help for hop limit">?</button>
+              </div>
+              <input id="cfgHopLimit" class="cfg-input" type="number" min="1" step="1">
+            </div>
+          </div>
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-title">Storage</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgMaxMapTraces">Max Map Traces</label>
+                <button type="button" class="cfg-help" data-help="max_map_traces" aria-label="Help for max map traces">?</button>
+              </div>
+              <input id="cfgMaxMapTraces" class="cfg-input" type="number" min="1" step="1">
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgMaxStoredTraces">Max Stored Traces (0 disables pruning)</label>
+                <button type="button" class="cfg-help" data-help="max_stored_traces" aria-label="Help for max stored traces">?</button>
+              </div>
+              <input id="cfgMaxStoredTraces" class="cfg-input" type="number" min="0" step="1">
+            </div>
+          </div>
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-title">Webhook</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgWebhookUrl">Webhook URL</label>
+                <button type="button" class="cfg-help" data-help="webhook_url" aria-label="Help for webhook url">?</button>
+              </div>
+              <input id="cfgWebhookUrl" class="cfg-input" type="text" placeholder="https://example.com/hook">
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgWebhookToken">Webhook API Token</label>
+                <button type="button" class="cfg-help" data-help="webhook_api_token" aria-label="Help for webhook api token">?</button>
+              </div>
+              <input id="cfgWebhookToken" class="cfg-input" type="password" placeholder="(optional)">
+            </div>
+          </div>
+        </div>
+
+        <div class="cfg-actions">
+          <button id="cfgApply" class="cfg-btn" type="button">Apply</button>
+          <button id="cfgReset" class="cfg-btn secondary" type="button">Reset</button>
+        </div>
+        <div id="cfgStatus" class="cfg-status"></div>
+        <div class="cfg-readonly">
+          <div>Server settings are controlled by CLI args and require restart.</div>
+          <div>DB: <code id="cfgDbPath">-</code></div>
+          <div>UI bind: <code id="cfgUiBind">-</code></div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <section id="helpModal" class="help-modal hidden" aria-label="Help" role="dialog" aria-modal="true">
     <div id="helpOverlay" class="help-overlay" aria-hidden="true"></div>
@@ -1235,6 +1353,10 @@ MAP_HTML = """<!doctype html>
     const cfgStatus = document.getElementById("cfgStatus");
     const cfgDbPath = document.getElementById("cfgDbPath");
     const cfgUiBind = document.getElementById("cfgUiBind");
+    const configModal = document.getElementById("configModal");
+    const configOverlay = document.getElementById("configOverlay");
+    const configClose = document.getElementById("configClose");
+    const configOpen = document.getElementById("configOpen");
     const helpModal = document.getElementById("helpModal");
     const helpOverlay = document.getElementById("helpOverlay");
     const helpClose = document.getElementById("helpClose");
@@ -2159,18 +2281,16 @@ MAP_HTML = """<!doctype html>
         state.markerByNum.set(nodeNum, marker);
       }
 
-      let drawnEdgeCount = 0;
       for (const trace of data.traces || []) {
         const traceId = Number(trace.trace_id);
         if (!Number.isFinite(traceId)) continue;
-        drawnEdgeCount += addTracePathSegments(traceId, trace.towards_nums || [], "towards");
-        drawnEdgeCount += addTracePathSegments(traceId, trace.back_nums || [], "back");
+        addTracePathSegments(traceId, trace.towards_nums || [], "towards");
+        addTracePathSegments(traceId, trace.back_nums || [], "back");
       }
 
       const viewData = {
         ...data,
         nodes: displayNodes,
-        drawn_edge_count: drawnEdgeCount,
       };
       state.lastData = viewData;
 
@@ -2178,7 +2298,6 @@ MAP_HTML = """<!doctype html>
       updateConfigUi(data);
       document.getElementById("nodeCount").textContent = String(data.node_count || 0);
       document.getElementById("traceCount").textContent = String(data.trace_count || 0);
-      document.getElementById("edgeCount").textContent = String(drawnEdgeCount);
       document.getElementById("updated").textContent = data.generated_at_utc || "-";
 
       renderLogs(data.logs || []);
@@ -2422,7 +2541,7 @@ MAP_HTML = """<!doctype html>
       refresh();
     }
 
-    function resetConfig() {
+	    function resetConfig() {
       const defaults = state.configDefaults || {
         interval: 5,
         heard_window: 120,
@@ -2437,7 +2556,7 @@ MAP_HTML = """<!doctype html>
       setCfgStatus("Reset to defaults (not applied).", { error: false });
     }
 
-    const HELP_COPY = {
+	    const HELP_COPY = {
       interval: {
         title: "Interval (minutes)",
         body: `How often Meshtracer attempts a traceroute.
@@ -2481,6 +2600,31 @@ Leave blank to disable webhooks.`,
 Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank for no auth.`,
       },
     };
+
+    let lastConfigFocus = null;
+    function openConfig() {
+      if (!configModal) return;
+      lastConfigFocus = document.activeElement;
+      configModal.classList.remove("hidden");
+      try {
+        if (configClose) configClose.focus();
+      } catch (_e) {
+      }
+    }
+
+    function closeConfig() {
+      if (!configModal) return;
+      configModal.classList.add("hidden");
+      try {
+        if (configOpen) {
+          configOpen.focus();
+        } else if (lastConfigFocus && typeof lastConfigFocus.focus === "function") {
+          lastConfigFocus.focus();
+        }
+      } catch (_e) {
+      }
+      lastConfigFocus = null;
+    }
 
     function openHelp(helpId) {
       const key = String(helpId || "").trim();
@@ -2565,11 +2709,19 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     discoveryRescan.addEventListener("click", () => rescanDiscovery());
     if (cfgApply) cfgApply.addEventListener("click", () => applyConfig());
     if (cfgReset) cfgReset.addEventListener("click", () => resetConfig());
+    if (configOpen) configOpen.addEventListener("click", () => openConfig());
+    if (configOverlay) configOverlay.addEventListener("click", () => closeConfig());
+    if (configClose) configClose.addEventListener("click", () => closeConfig());
     if (helpOverlay) helpOverlay.addEventListener("click", () => closeHelp());
     if (helpClose) helpClose.addEventListener("click", () => closeHelp());
     window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && helpModal && !helpModal.classList.contains("hidden")) {
+      if (event.key !== "Escape") return;
+      if (helpModal && !helpModal.classList.contains("hidden")) {
         closeHelp();
+        return;
+      }
+      if (configModal && !configModal.classList.contains("hidden")) {
+        closeConfig();
       }
     });
     for (const btn of document.querySelectorAll("button[data-help]")) {
