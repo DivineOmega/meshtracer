@@ -214,7 +214,7 @@ class SQLiteStore:
             ).fetchall()
             trace_rows = self._conn.execute(
                 """
-                SELECT trace_id, captured_at_utc, towards_nums_json, back_nums_json, packet_json
+                SELECT trace_id, captured_at_utc, towards_nums_json, back_nums_json, packet_json, result_json
                 FROM traceroutes
                 WHERE mesh_host = ?
                 ORDER BY trace_id DESC
@@ -242,6 +242,7 @@ class SQLiteStore:
             towards_raw = self._json_loads(row["towards_nums_json"], [])
             back_raw = self._json_loads(row["back_nums_json"], [])
             packet_raw = self._json_loads(row["packet_json"], {})
+            result_raw = self._json_loads(row["result_json"], {})
             towards_nums = [
                 int(value)
                 for value in towards_raw
@@ -252,6 +253,46 @@ class SQLiteStore:
                 for value in back_raw
                 if isinstance(value, (int, float, str)) and str(value).lstrip("-").isdigit()
             ]
+            towards_snr_db: list[float | None] | None = None
+            back_snr_db: list[float | None] | None = None
+            if isinstance(result_raw, dict):
+                towards_hops = result_raw.get("route_towards_destination")
+                if isinstance(towards_hops, list):
+                    values: list[float | None] = []
+                    has_value = False
+                    for hop in towards_hops:
+                        snr = hop.get("snr_db") if isinstance(hop, dict) else None
+                        if snr is None:
+                            values.append(None)
+                            continue
+                        try:
+                            snr_f = float(snr)
+                        except (TypeError, ValueError):
+                            values.append(None)
+                            continue
+                        values.append(snr_f)
+                        has_value = True
+                    if has_value:
+                        towards_snr_db = values
+
+                back_hops = result_raw.get("route_back_to_origin")
+                if isinstance(back_hops, list):
+                    values = []
+                    has_value = False
+                    for hop in back_hops:
+                        snr = hop.get("snr_db") if isinstance(hop, dict) else None
+                        if snr is None:
+                            values.append(None)
+                            continue
+                        try:
+                            snr_f = float(snr)
+                        except (TypeError, ValueError):
+                            values.append(None)
+                            continue
+                        values.append(snr_f)
+                        has_value = True
+                    if has_value:
+                        back_snr_db = values
             traces.append(
                 {
                     "trace_id": int(row["trace_id"]),
@@ -259,6 +300,8 @@ class SQLiteStore:
                     "towards_nums": towards_nums,
                     "back_nums": back_nums,
                     "packet": packet_raw if isinstance(packet_raw, dict) else {},
+                    "towards_snr_db": towards_snr_db,
+                    "back_snr_db": back_snr_db,
                 }
             )
         return nodes, traces
