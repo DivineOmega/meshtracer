@@ -440,30 +440,6 @@ MAP_HTML = """<!doctype html>
         width: 100%;
       }
     }
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 6px;
-      margin-bottom: 8px;
-    }
-    .stat {
-      border: 1px solid #2a3d61;
-      background: #0e1730;
-      border-radius: 8px;
-      padding: 6px 8px;
-    }
-    .stat-k {
-      display: block;
-      color: var(--muted);
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .stat-v {
-      font-size: 14px;
-      font-weight: 700;
-      color: #e7efff;
-    }
     .legend {
       display: inline-flex;
       align-items: center;
@@ -1097,9 +1073,6 @@ MAP_HTML = """<!doctype html>
         width: min(86vw, 390px);
         min-width: 250px;
       }
-      .stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
     }
   </style>
 </head>
@@ -1165,10 +1138,6 @@ MAP_HTML = """<!doctype html>
           <button id="disconnectBtn" class="disconnect-btn" type="button" style="display:none">Disconnect</button>
         </div>
         <div id="clientError" class="client-error"></div>
-        <div class="stats">
-          <div class="stat"><span class="stat-k">Nodes</span><span id="nodeCount" class="stat-v">0</span></div>
-          <div class="stat"><span class="stat-k">Traces</span><span id="traceCount" class="stat-v">0</span></div>
-        </div>
         <div class="legend">
           <span><span class="dot dot-fresh"></span>Fresh</span>
           <span><span class="dot dot-mid"></span>Mid</span>
@@ -2767,8 +2736,10 @@ MAP_HTML = """<!doctype html>
 
       updateConnectionUi(data);
       updateConfigUi(data);
-      document.getElementById("nodeCount").textContent = String(data.node_count || 0);
-      document.getElementById("traceCount").textContent = String(data.trace_count || 0);
+      const nodeTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "nodes");
+      if (nodeTab) nodeTab.textContent = `Nodes (${String(data.node_count || 0)})`;
+      const traceTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "traces");
+      if (traceTab) traceTab.textContent = `Traces (${String(data.trace_count || 0)})`;
       document.getElementById("updated").textContent = data.generated_at_utc || "-";
 
       renderLogs(data.logs || []);
