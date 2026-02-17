@@ -1,17 +1,43 @@
 # meshtracer
 
-`meshtracer.py` connects to a Meshtastic node over TCP (WiFi/Ethernet), then continuously:
+Meshtracer connects to a Meshtastic node over TCP (WiFi/Ethernet), stores mesh history in SQLite, and serves a live web UI for map/traceroute/telemetry/chat workflows.
 
-1. Selects a random node heard within a recent time window (default: 2 hours)
-2. Runs a traceroute to that node
-3. Prints human-readable traceroute output to the terminal
-4. Optionally POSTs structured JSON for completed traceroutes to a webhook URL
+Default web UI address: `http://127.0.0.1:8090/`
+
+## Capabilities
+
+- Connect/disconnect to a Meshtastic TCP node from UI or CLI startup host.
+- Best-effort LAN discovery for Meshtastic TCP targets (default port `4403`).
+- Continuous traceroute worker with configurable behavior:
+  - `automatic`: periodic random eligible-node traceroutes.
+  - `manual`: runs only queued traceroutes.
+- Per-node traceroute queue with dedupe, queue-position reporting, and removal.
+- Live map with node markers, inferred edges, trace highlighting, and node/trace drill-down.
+- Node details view with tabs:
+  - `Node Info`
+  - `Traceroutes`
+  - `Position`
+  - `Telemetry` (nested `Device` and `Environment` tabs)
+- Node actions from node details:
+  - `Request Node Info`
+  - `Run Traceroute`
+  - `Request Position`
+  - `Request Device/Environment Telemetry`
+  - Person button to open direct chat to selected node.
+- Chat UI:
+  - Channel + direct recipients.
+  - Channel labels from interface channel metadata when available (including modem-preset style names such as `LongFast` for primary channel); fallback labels are used when unavailable.
+  - Clickable sender node labels to jump to node details.
+  - Repeated identical message text is supported.
+- Runtime config modal with persisted settings.
+- Optional webhook POST on completed traceroutes with parsed route payload.
+- Realtime updates over SSE with polling fallback.
 
 ## Requirements
 
-- Python 3.10+
-- A Meshtastic node reachable by IP (for example `192.168.x.x`)
-- `meshtastic` Python package (installed via `requirements.txt`)
+- Python `3.10+`
+- Meshtastic node reachable by IP/hostname over TCP.
+- Python dependencies from `requirements.txt` (currently pins `meshtastic==2.7.7`).
 
 ## Setup
 
@@ -24,19 +50,23 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-Run with defaults:
+Web UI mode (default):
 
 ```bash
 source .venv/bin/activate
 python meshtracer.py
 ```
 
-This starts the web UI (default: `http://127.0.0.1:8090/`) and opens your browser. If you aren't connected yet, the onboarding screen will prompt you for your node IP/hostname and also shows any nodes auto-discovered on your LAN (best-effort scan).
-
-Optional: auto-connect on startup:
+Web UI mode with startup auto-connect:
 
 ```bash
-python meshtracer.py <NODE_IP>
+python meshtracer.py <NODE_IP_OR_HOST>
+```
+
+Terminal-only mode (no web UI; host required):
+
+```bash
+python meshtracer.py <NODE_IP_OR_HOST> --no-web
 ```
 
 Stop with `Ctrl+C`.
@@ -47,357 +77,280 @@ Stop with `Ctrl+C`.
 python meshtracer.py [host] [options]
 ```
 
-Arguments:
+`host`:
 
-- `host` (optional): IP address or hostname of your Meshtastic node (if omitted, connect from the web UI)
+- Optional when web UI is enabled.
+- Required when using `--no-web`.
 
 Options:
 
-- `--interval <minutes>`
-  - Default: `5`
-  - Minutes between traceroute attempts (start-to-start cadence target)
-- `--heard-window <minutes>`
-  - Default: `120` (2 hours)
-  - Only nodes heard within this window are eligible
-- `--hop-limit <int>`
-  - Default: `7`
-  - Hop limit passed to Meshtastic traceroute
-- `--webhook-url <url>`
-  - Default: not set
-  - If set, completed traceroutes are sent as JSON via HTTP POST
-- `--webhook-api-token <token>`
-  - Default: not set
-  - Optional token sent in request headers when webhook is enabled
-- `--serve-map`
-  - Default: on
-  - Serve the embedded web UI (kept for backwards compatibility; it is now the default)
-- `--no-web`
-  - Default: off
-  - Disable the web UI (run traceroutes in the terminal only)
-- `--no-open`
-  - Default: off
-  - Do not auto-open a browser when the web UI starts
-- `--map-host <addr>`
-  - Default: `127.0.0.1`
-  - Bind address for the embedded map server
-- `--map-port <port>`
-  - Default: `8090`
-  - Listen port for the embedded web UI
-- `--db-path <path>`
-  - Default: `meshtracer.db`
-  - SQLite file used for persisted nodes/traceroutes history
-- `--traceroute-retention-hours <int>`
-  - Default: `720` (30 days)
-  - Deletes completed traceroutes older than this age in SQLite
+| Option | Default | Notes |
+|---|---:|---|
+| `--interval <minutes>` | `5` | Traceroute cycle interval. Float allowed. Must be `> 0`. |
+| `--heard-window <minutes>` | `120` | Only nodes heard within this window are eligible for automatic mode. Must be `> 0`. |
+| `--hop-limit <int>` | `7` | Hop limit used for traceroute requests. Must be `> 0`. |
+| `--webhook-url <url>` | unset | Enables webhook delivery for completed traceroutes. |
+| `--webhook-api-token <token>` | unset | Adds `Authorization: Bearer <token>` and `X-API-Token: <token>` headers when webhook is enabled. |
+| `--serve-map` | on | Kept for compatibility; web UI is already default-on. |
+| `--no-web` | off | Disable web UI and run worker in terminal mode only. |
+| `--no-open` | off | Do not auto-open browser when web UI starts. |
+| `--map-host <addr>` | `127.0.0.1` | Web server bind address. |
+| `--map-port <port>` | `8090` | Web server port (`1-65535`). |
+| `--db-path <path>` | `meshtracer.db` | SQLite database file path. |
+| `--traceroute-retention-hours <int>` | `720` | Delete completed traceroutes older than this many hours. Must be `> 0`. |
 
 ## Runtime Behavior
 
-- The script connects once at startup using `meshtastic.tcp_interface.TCPInterface`.
-- Node/traceroute history is persisted in SQLite and partitioned per connected mesh node (local node num/id, with host fallback) so each node keeps its own dataset.
-- Node updates are ingested in near-real-time via Meshtastic pubsub events (`meshtastic.receive` and `meshtastic.node.updated`), so newly-heard nodes appear without waiting for the next traceroute cycle.
-- Each cycle:
-  - Picks one random node from `nodesByNum` heard in the last window.
-  - Excludes local node from candidates.
-  - Sends traceroute.
-  - Prints completion or timeout/failure.
-  - Sleeps for remaining interval time.
-- If no eligible nodes are heard recently, it logs that and waits until next cycle.
+### Partitioning and persistence
+
+- Data is partitioned by connected mesh identity:
+  - Preferred key: `node:<local_num>[:<local_id>]`
+  - Fallback key: `host:<host>`
+- Multiple radios/hosts can share one SQLite file without mixing histories.
+
+### Discovery behavior
+
+- Discovery scans likely private `/24` networks for open Meshtastic TCP port `4403`.
+- Discovery is enabled while disconnected in web UI mode.
+- Discovery is disabled after successful connect and re-enabled on disconnect.
+
+### Traceroute worker behavior
+
+Runtime config key `traceroute_behavior`:
+
+- `automatic`:
+  - Runs on interval.
+  - Chooses one random eligible node heard within `heard_window`.
+  - Excludes local node.
+- `manual`:
+  - Does not run scheduled random traces.
+  - Executes queued traces only.
+
+Queue details:
+
+- Queue is deduped per target node.
+- Running entries from prior sessions are re-queued on startup.
+- Queued manual traces are processed in either behavior mode.
+
+### Runtime config (persisted)
+
+Persisted config keys:
+
+- `traceroute_behavior` (`automatic` or `manual`)
+- `interval`
+- `heard_window`
+- `fresh_window`
+- `mid_window`
+- `hop_limit`
+- `traceroute_retention_hours`
+- `webhook_url`
+- `webhook_api_token`
+
+Validation rules:
+
+- `interval > 0`
+- `heard_window > 0`
+- `fresh_window > 0`
+- `mid_window > 0`
+- `mid_window >= fresh_window`
+- `hop_limit > 0`
+- `traceroute_retention_hours > 0`
+- `traceroute_behavior` must be `automatic` or `manual`
+
+Security note:
+
+- Webhook token is persisted in SQLite.
+- Public config responses intentionally redact the token and expose `webhook_api_token_set`.
+
+### Traceroute timeout derivation
+
+Meshtracer updates Meshtastic internal timeout base per config:
+
+- `effective_timeout = max(1, ((int(interval_minutes * 60) - 1) // hop_limit))`
+
+With defaults (`interval=5`, `hop_limit=7`):
+
+- `effective_timeout = 42`
+- Approximate max wait = `42 * 7 = 294s`
+
+## Web UI Overview
+
+Main areas:
+
+- Onboarding connect panel (host entry + discovery list + rescan).
+- Sidebar tabs:
+  - `Log`
+  - `Nodes` (search + sort)
+  - `Traces`
+- Map canvas with node markers and trace lines.
+- Top-left details panel for selected trace/node.
+- Chat modal.
+- Config modal (with inline help).
+- Database reset action in config modal.
+
+Node details behavior:
+
+- Person button appears in node details header and opens direct chat to selected node.
+- Telemetry tabs (`Device`, `Environment`) are nested under top-level `Telemetry` tab.
+- Position and node-info request actions are available from their respective tabs.
+
+Chat behavior:
+
+- Recipient groups: `Channels`, `Recently Messaged Nodes`, `Other Nodes`.
+- Sender labels in incoming messages are clickable and open node details.
+- Enter key sends messages.
+- Message history is persisted per mesh partition.
+
+## HTTP API
+
+All endpoints are served by embedded web server.
+
+### GET endpoints
+
+- `/` or `/map`
+  - UI HTML.
+- `/api/map`
+  - Full snapshot payload.
+- `/api/events?since=<snapshot_revision>`
+  - SSE stream.
+  - Events: `snapshot`, `heartbeat`.
+- `/api/config`
+  - `{ "ok": true, "config": { ...public runtime config... } }`
+- `/api/chat/messages?recipient_kind=<channel|direct>&recipient_id=<id>&limit=<n>`
+  - Returns chat history for the selected recipient.
+- `/healthz`
+  - Basic liveness payload.
+
+### POST endpoints
+
+- `/api/connect`
+  - Body: `{ "host": "..." }`
+- `/api/disconnect`
+  - Body: `{}`
+- `/api/config`
+  - Body: partial runtime config update object.
+- `/api/discovery/rescan`
+  - Body: `{}`
+- `/api/traceroute`
+  - Body: `{ "node_num": <int> }`
+- `/api/traceroute/queue/remove`
+  - Body: `{ "queue_id": <int> }`
+- `/api/chat/send`
+  - Body: `{ "recipient_kind": "channel|direct", "recipient_id": <int>, "text": "..." }`
+- `/api/telemetry/request`
+  - Body: `{ "node_num": <int>, "telemetry_type": "device|environment" }`
+- `/api/nodeinfo/request`
+  - Body: `{ "node_num": <int> }`
+- `/api/position/request`
+  - Body: `{ "node_num": <int> }`
+- `/api/database/reset`
+  - Body: `{}`
+
+Response pattern:
+
+- Most POST handlers return:
+  - `ok` (bool)
+  - `detail` (status text)
+  - `snapshot` (latest full snapshot)
+- Invalid inputs usually return `400` with an error string.
+
+### Snapshot shape (`GET /api/map`)
+
+Top-level keys include:
+
+- map data: `nodes`, `traces`, `edges`
+- revisions: `map_revision`, `log_revision`, `snapshot_revision`
+- logs: `logs`
+- connection: `connected`, `connection_state`, `connected_host`, `connection_error`
+- discovery: `discovery`
+- runtime config: `config`, `config_defaults`
+- server info: `server` (`db_path`, `map_host`, `map_port`)
+- traceroute control: `traceroute_control` (`running_node_num`, `queued_node_nums`, `queue_entries`)
+- chat metadata: `chat` (`revision`, `channels`, `channel_names`, `recent_direct_node_nums`)
+
+## SQLite Persistence
+
+Default DB path: `meshtracer.db`
+
+Core tables:
+
+- `runtime_config`
+- `nodes`
+- `node_telemetry`
+- `node_positions`
+- `traceroutes`
+- `traceroute_queue`
+- `chat_messages`
+
+Behavior highlights:
+
+- WAL mode enabled.
+- Traceroute retention pruning runs on insert and config updates.
+- Chat data and queue state are partitioned by `mesh_host`.
+
+## Webhook Integration
+
+Webhook POST is attempted only when traceroute completes and parsed traceroute payload is available.
+
+Request:
+
+- Method: `POST`
+- Content-Type: `application/json`
+- User-Agent: `meshtracer/1.0`
+- Optional token headers:
+  - `Authorization: Bearer <token>`
+  - `X-API-Token: <token>`
+
+Payload fields include:
+
+- `event`
+- `sent_at_utc`
+- `mesh_host`
+- `interval_minutes`
+- `interval_seconds`
+- `hop_limit`
+- `selected_target`
+- `selected_target_last_heard_age_seconds`
+- `eligible_candidate_count`
+- `trigger` (`scheduled` or `manual`)
+- `traceroute`
 
 ## Project Layout
 
-- `meshtracer.py`: thin launcher entrypoint
-- `meshtracer_app/app.py`: main runtime loop and orchestration
-- `meshtracer_app/cli.py`: CLI argument parsing
-- `meshtracer_app/meshtastic_helpers.py`: Meshtastic-specific parsing and node helpers
-- `meshtracer_app/storage.py`: SQLite persistence layer
-- `meshtracer_app/state.py`: in-memory/runtime map state and log buffer
-- `meshtracer_app/map_server.py`: embedded map HTTP server and frontend template
+- `meshtracer.py`: launcher entrypoint
+- `meshtracer_app/app.py`: controller, worker loop, connection and command handling
+- `meshtracer_app/cli.py`: CLI parsing
+- `meshtracer_app/map_server.py`: HTTP API + embedded frontend HTML/JS/CSS
+- `meshtracer_app/state.py`: map state/revisioning/log buffer
+- `meshtracer_app/storage.py`: SQLite schema + persistence
+- `meshtracer_app/discovery.py`: LAN discovery scanner
+- `meshtracer_app/meshtastic_helpers.py`: Meshtastic parsing/utility helpers
 - `meshtracer_app/webhook.py`: webhook delivery helper
-- `tests/`: unit tests for core helpers and storage behavior
-
-## Embedded Map
-
-When the web UI is enabled (default), `meshtracer.py` hosts:
-
-- `GET /` (or `/map`): browser UI map
-- `GET /api/map`: JSON snapshot of nodes, traces, and drawable edges
-- `GET /healthz`: basic health response
-
-Map data behavior:
-
-- Node markers are shown when node coordinates are known.
-- Marker labels use each node's `short_name` (with fallback when missing).
-- Marker colors indicate how recently each node was heard:
-  - Fresh (green): heard within 2 hours
-  - Mid (gray-blue): heard within 8 hours
-  - Stale (dark slate): older/unknown
-- Line segments are generated from completed traceroutes:
-  - `route_towards_destination` segments (orange)
-  - `route_back_to_origin` segments (blue)
-- Forward and return segments are offset slightly so overlapping paths are visually separated.
-- For nodes without GPS coordinates, map positions are estimated from traceroute order/adjacency when possible.
-- Traceroute-only unknown hop IDs are also synthesized into map nodes (short name = last 4 hex chars) and estimated the same way, so their surrounding segments can render.
-- Map/API data is loaded from SQLite history for the currently connected mesh-node partition.
-- The map includes a resizable/collapsible right sidebar with 3 tabs:
-  - `Log`: runtime lines mirrored from terminal output
-  - `Nodes`: known nodes list
-  - `Traces`: completed traceroutes stored in SQLite for the active partition
-- A settings (cog) button in the sidebar header opens the `Config` modal: runtime settings (interval/heard window/hop limit/webhook/storage retention)
-- Config changes are saved into the SQLite database and restored on restart.
-- Webhook API tokens are stored in SQLite in plaintext.
-- Interactions:
-  - Clicking a node marker on the map selects that node, switches to the `Nodes` tab, and highlights the matching node list item
-  - Clicking a node in `Nodes` highlights and pans/zooms to that node marker
-  - The `Nodes` tab includes:
-    - Live search filter by node short name and long name
-    - Sort selector: `Last heard` (default), `Short name`, or `Long name`
-  - Clicking a trace in `Traces` highlights that route edges and pans/zooms to its route area
-  - Selecting a trace or node opens a top-left details panel; use its `X` button to clear the selection
-
-## SQLite History
-
-- Database file: `--db-path` (default `meshtracer.db`)
-- Partition key: connected local Meshtastic node identity (`node:<num>[:<id>]`), with `host:<host>` fallback
-- Retention: `--traceroute-retention-hours` deletes completed traceroutes older than the configured age
-- Storage model:
-  - `nodes` table keyed by `(mesh_host, node_num)`
-  - `traceroutes` table keyed by `trace_id` with `mesh_host` column for partitioning
-- Result:
-  - Running against `192.168.68.52` and `192.168.68.53` stores separate traceroute histories in the same DB file
-  - Restarting the script keeps prior history (including map lines) for that same host
-
-Example map run:
-
-```bash
-python meshtracer.py <NODE_IP> --map-host 0.0.0.0 --map-port 8090
-```
+- `tests/`: unit tests
 
 ## Development Checks
 
-Run unit tests:
+Run tests:
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-Validate syntax:
+Quick syntax validation:
 
 ```bash
-python -m py_compile meshtracer.py meshtracer_app/*.py
-```
-
-## Traceroute Wait Behavior
-
-The script automatically derives Meshtastic internal timeout from interval and hop limit:
-
-- `effective_timeout = max(1, ((interval_minutes * 60) - 1) // hop_limit)`
-
-This is assigned to `interface._timeout.expireTimeout`.
-
-With defaults (`interval=5` minutes, `hop_limit=7`):
-
-- `effective_timeout = 42`
-- Approx max traceroute wait is `42 * 7 = 294` seconds
-- Remaining time is used to maintain ~5 minute cadence
-
-## Webhook Integration
-
-Webhook POST is attempted only after a traceroute completes and a response payload is parsed.
-
-### Webhook request
-
-- Method: `POST`
-- Content-Type: `application/json`
-- User-Agent: `meshtracer/1.0`
-
-If `--webhook-api-token` is set, these headers are added:
-
-- `Authorization: Bearer <token>`
-- `X-API-Token: <token>`
-
-Header names are case-insensitive on HTTP receivers.
-
-### Webhook payload JSON format
-
-Top-level object:
-
-- `event` (`string`)
-- `sent_at_utc` (`string`, UTC timestamp)
-- `mesh_host` (`string`)
-- `interval_minutes` (`number`)
-- `interval_seconds` (`number`)
-- `hop_limit` (`number`)
-- `selected_target` (`NodeRecord`)
-- `selected_target_last_heard_age_seconds` (`number`)
-- `eligible_candidate_count` (`number`)
-- `traceroute` (`TracerouteResult`)
-
-`NodeRecord`:
-
-- `num` (`number`)
-- `id` (`string|null`)
-- `long_name` (`string|null`)
-- `short_name` (`string|null`)
-
-`TracerouteResult`:
-
-- `captured_at_utc` (`string`, UTC timestamp)
-- `packet`:
-  - `from` (`NodeRecord`)
-  - `to` (`NodeRecord`)
-- `route_towards_destination` (`Hop[]`)
-- `route_back_to_origin` (`Hop[]|null`)
-- `raw`:
-  - `route` (`number[]`)
-  - `snr_towards_raw` (`number[]`)
-  - `route_back` (`number[]`)
-  - `snr_back_raw` (`number[]`)
-
-`Hop`:
-
-- `node` (`NodeRecord`)
-- `snr_db` (`number|null`)
-
-Notes:
-
-- Unknown SNR values are represented as `null` for `snr_db`.
-- `route_back_to_origin` may be `null` when reverse route info is unavailable.
-
-### Example payload
-
-```json
-{
-  "event": "meshtastic_traceroute_complete",
-  "sent_at_utc": "2026-02-13 00:00:00 UTC",
-  "mesh_host": "MESH_NODE_IP",
-  "interval_minutes": 5,
-  "interval_seconds": 300,
-  "hop_limit": 3,
-  "selected_target": {
-    "num": 1234567890,
-    "id": "!abcdef01",
-    "long_name": "Target Node",
-    "short_name": "TRGT"
-  },
-  "selected_target_last_heard_age_seconds": 742.2,
-  "eligible_candidate_count": 42,
-  "traceroute": {
-    "captured_at_utc": "2026-02-13 00:00:03 UTC",
-    "packet": {
-      "from": {
-        "num": 1234567890,
-        "id": "!abcdef01",
-        "long_name": "Target Node",
-        "short_name": "TRGT"
-      },
-      "to": {
-        "num": 987654321,
-        "id": "!1234abcd",
-        "long_name": "Origin Node",
-        "short_name": "ORIG"
-      }
-    },
-    "route_towards_destination": [
-      {
-        "node": {
-          "num": 987654321,
-          "id": "!1234abcd",
-          "long_name": "Origin Node",
-          "short_name": "ORIG"
-        },
-        "snr_db": -11.5
-      },
-      {
-        "node": {
-          "num": 1234567890,
-          "id": "!abcdef01",
-          "long_name": "Target Node",
-          "short_name": "TRGT"
-        },
-        "snr_db": 7.25
-      }
-    ],
-    "route_back_to_origin": [
-      {
-        "node": {
-          "num": 1234567890,
-          "id": "!abcdef01",
-          "long_name": "Target Node",
-          "short_name": "TRGT"
-        },
-        "snr_db": 6.75
-      },
-      {
-        "node": {
-          "num": 192837465,
-          "id": "!deadbeef",
-          "long_name": "Relay Node",
-          "short_name": "RLY1"
-        },
-        "snr_db": 2.5
-      },
-      {
-        "node": {
-          "num": 987654321,
-          "id": "!1234abcd",
-          "long_name": "Origin Node",
-          "short_name": "ORIG"
-        },
-        "snr_db": -9.0
-      }
-    ],
-    "raw": {
-      "route": [],
-      "snr_towards_raw": [-46, 29],
-      "route_back": [192837465],
-      "snr_back_raw": [27, 10, -36]
-    }
-  }
-}
-```
-
-## Example Commands
-
-Basic run:
-
-```bash
-python meshtracer.py <NODE_IP>
-```
-
-Custom interval (minutes) and hop limit:
-
-```bash
-python meshtracer.py <NODE_IP> --interval 2 --hop-limit 5
-```
-
-With webhook:
-
-```bash
-python meshtracer.py <NODE_IP> \
-  --webhook-url https://example.com/meshtastic/traceroute \
-  --webhook-api-token YOUR_TOKEN
+python -m py_compile meshtracer.py meshtracer_app/*.py tests/*.py
 ```
 
 ## Troubleshooting
 
-Missing dependency:
-
-- Ensure you installed from the same interpreter/venv you use to run.
-- Recommended run path:
-
-```bash
-source .venv/bin/activate
-pip install -r requirements.txt
-python meshtracer.py <NODE_IP>
-```
-
-Traceroute timeout messages:
-
-- Timeouts are expected for unreachable nodes or weak links.
-- The script continues and retries next cycle.
-
-Webhook not delivered:
-
-- Verify `--webhook-url` is reachable from where the script runs.
-- Check receiver logs and token validation.
-- The script logs HTTP status or request failure reason.
+- Connect fails:
+  - Confirm target host is reachable and Meshtastic TCP is enabled.
+- `--no-web` mode exits with host error:
+  - Provide positional `host` argument.
+- Discovery list is empty:
+  - Discovery is best-effort and scans likely private `/24` networks.
+- Webhook not delivered:
+  - Validate URL reachability, receiver status, and token handling.
+- Browser not auto-opened:
+  - Use `--no-open` intentionally or open `http://127.0.0.1:8090/` manually.
