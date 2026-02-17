@@ -68,6 +68,7 @@ class _DummyTelemetryMessage:
     def __init__(self) -> None:
         self.device_metrics = _DummyTelemetryField()
         self.environment_metrics = _DummyTelemetryField()
+        self.power_metrics = _DummyTelemetryField()
 
 
 class _DummyTelemetryInterface(_DummyInterface):
@@ -371,6 +372,7 @@ class ControllerConfigTests(unittest.TestCase):
                     Telemetry=_DummyTelemetryMessage,
                     DeviceMetrics=type("DeviceMetrics", (), {}),
                     EnvironmentMetrics=type("EnvironmentMetrics", (), {}),
+                    PowerMetrics=type("PowerMetrics", (), {}),
                 )
                 portnums_pb2 = SimpleNamespace(
                     PortNum=SimpleNamespace(TELEMETRY_APP=67),
@@ -394,6 +396,59 @@ class ControllerConfigTests(unittest.TestCase):
                 self.assertEqual(sent.get("portNum"), 67)
                 self.assertEqual(sent.get("wantResponse"), True)
                 self.assertIsNone(sent.get("onResponse"))
+            finally:
+                store.close()
+
+    def test_request_node_power_telemetry_uses_non_blocking_send_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                telemetry_iface = _DummyTelemetryInterface(local_num=1)
+                with controller._lock:
+                    controller._interface = telemetry_iface
+                    controller._worker_thread = _DummyWorker()
+                    controller._connection_state = "connected"
+
+                telemetry_pb2 = SimpleNamespace(
+                    Telemetry=_DummyTelemetryMessage,
+                    DeviceMetrics=type("DeviceMetrics", (), {}),
+                    EnvironmentMetrics=type("EnvironmentMetrics", (), {}),
+                    PowerMetrics=type("PowerMetrics", (), {}),
+                )
+                portnums_pb2 = SimpleNamespace(
+                    PortNum=SimpleNamespace(TELEMETRY_APP=67),
+                )
+
+                def import_stub(module_name: str):
+                    if module_name == "meshtastic.protobuf.telemetry_pb2":
+                        return telemetry_pb2
+                    if module_name == "meshtastic.protobuf.portnums_pb2":
+                        return portnums_pb2
+                    raise ModuleNotFoundError(module_name)
+
+                with mock.patch("meshtracer_app.app.importlib.import_module", side_effect=import_stub):
+                    ok, detail = controller.request_node_telemetry(42, "power")
+
+                self.assertTrue(ok, detail)
+                self.assertIn("requested power telemetry", detail)
+                self.assertEqual(len(telemetry_iface.sent_packets), 1)
+                sent = telemetry_iface.sent_packets[0]
+                self.assertEqual(sent.get("destinationId"), 42)
+                self.assertEqual(sent.get("portNum"), 67)
+                self.assertEqual(sent.get("wantResponse"), True)
+                payload = sent.get("data")
+                self.assertIsNotNone(payload)
+                self.assertIsNotNone(getattr(payload, "power_metrics", None))
+                self.assertIsNotNone(getattr(payload.power_metrics, "last_copy", None))
             finally:
                 store.close()
 
@@ -546,16 +601,23 @@ class ControllerConfigTests(unittest.TestCase):
         )
         self.assertEqual(
             MeshTracerController._telemetry_packet_types(
+                {"decoded": {"telemetry": {"power_metrics": {"ch1Voltage": 12.7}}}}
+            ),
+            ["power"],
+        )
+        self.assertEqual(
+            MeshTracerController._telemetry_packet_types(
                 {
                     "decoded": {
                         "telemetry": {
                             "device_metrics": {"batteryLevel": 50},
                             "environmentMetrics": {"temperature": 21.2},
+                            "powerMetrics": {"ch1Voltage": 12.7},
                         }
                     }
                 }
             ),
-            ["device", "environment"],
+            ["device", "environment", "power"],
         )
         self.assertEqual(MeshTracerController._telemetry_packet_types({"decoded": {}}), [])
 
@@ -682,6 +744,8 @@ class ControllerConfigTests(unittest.TestCase):
                     "from": 42,
                     "to": 0xFFFFFFFF,
                     "channel": 1,
+                    "hopStart": 3,
+                    "hopLimit": 1,
                     "rxTime": 1739740001,
                     "decoded": {"portnum": "TEXT_MESSAGE_APP", "text": "channel hello"},
                 }
@@ -689,6 +753,8 @@ class ControllerConfigTests(unittest.TestCase):
                     "id": 3002,
                     "from": 42,
                     "to": 10,
+                    "hopStart": 1,
+                    "hopLimit": 1,
                     "rxTime": 1739740002,
                     "decoded": {"portnum": "TEXT_MESSAGE_APP", "text": "direct hello"},
                 }
@@ -715,6 +781,14 @@ class ControllerConfigTests(unittest.TestCase):
                 self.assertEqual(len(direct_messages), 1)
                 self.assertEqual(channel_messages[0].get("text"), "channel hello")
                 self.assertEqual(direct_messages[0].get("text"), "direct hello")
+                self.assertEqual(
+                    ((channel_messages[0].get("packet") or {}).get("hopsAway")),
+                    2,
+                )
+                self.assertEqual(
+                    ((direct_messages[0].get("packet") or {}).get("hopsAway")),
+                    0,
+                )
             finally:
                 store.close()
 
@@ -927,6 +1001,7 @@ class ControllerConfigTests(unittest.TestCase):
                         "user": {"id": "!node42", "longName": "Node 42", "shortName": "N42"},
                         "deviceMetrics": {"batteryLevel": 73, "voltage": 3.9},
                         "environmentMetrics": {"temperature": 19.5},
+                        "powerMetrics": {"ch1Voltage": 13.1},
                     }
                 }
 
@@ -939,6 +1014,7 @@ class ControllerConfigTests(unittest.TestCase):
                             "telemetry": {
                                 "deviceMetrics": {"batteryLevel": 70},
                                 "environmentMetrics": {"temperature": 18.0},
+                                "powerMetrics": {"ch1Voltage": 12.8},
                             }
                         },
                     },
@@ -951,8 +1027,10 @@ class ControllerConfigTests(unittest.TestCase):
                 self.assertEqual(node.get("device_telemetry", {}).get("batteryLevel"), 73)
                 self.assertEqual(node.get("device_telemetry", {}).get("voltage"), 3.9)
                 self.assertEqual(node.get("environment_telemetry", {}).get("temperature"), 19.5)
+                self.assertEqual(node.get("power_telemetry", {}).get("ch1Voltage"), 13.1)
                 self.assertTrue(bool(node.get("device_telemetry_updated_at_utc")))
                 self.assertTrue(bool(node.get("environment_telemetry_updated_at_utc")))
+                self.assertTrue(bool(node.get("power_telemetry_updated_at_utc")))
             finally:
                 store.close()
 

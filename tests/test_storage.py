@@ -258,16 +258,28 @@ class SQLiteStoreTests(unittest.TestCase):
                         {"temperature": 22.5},
                     )
                 )
+                self.assertTrue(
+                    store.upsert_node_telemetry(
+                        "node:telemetry",
+                        321,
+                        "power",
+                        {"ch1Voltage": 13.2},
+                    )
+                )
 
                 device = store.get_node_telemetry("node:telemetry", 321, "device")
                 environment = store.get_node_telemetry("node:telemetry", 321, "environment")
+                power = store.get_node_telemetry("node:telemetry", 321, "power")
                 self.assertIsNotNone(device)
                 self.assertIsNotNone(environment)
+                self.assertIsNotNone(power)
                 self.assertEqual((device or {}).get("telemetry", {}).get("batteryLevel"), 85)
                 self.assertEqual((device or {}).get("telemetry", {}).get("voltage"), 3.93)
                 self.assertEqual((environment or {}).get("telemetry", {}).get("temperature"), 22.5)
+                self.assertEqual((power or {}).get("telemetry", {}).get("ch1Voltage"), 13.2)
                 self.assertTrue(bool((device or {}).get("updated_at_utc")))
                 self.assertTrue(bool((environment or {}).get("updated_at_utc")))
+                self.assertTrue(bool((power or {}).get("updated_at_utc")))
 
                 nodes, _traces = store.snapshot("node:telemetry", max_traces=10)
                 self.assertEqual(len(nodes), 1)
@@ -275,8 +287,10 @@ class SQLiteStoreTests(unittest.TestCase):
                 self.assertEqual(node.get("device_telemetry", {}).get("batteryLevel"), 85)
                 self.assertEqual(node.get("device_telemetry", {}).get("voltage"), 3.93)
                 self.assertEqual(node.get("environment_telemetry", {}).get("temperature"), 22.5)
+                self.assertEqual(node.get("power_telemetry", {}).get("ch1Voltage"), 13.2)
                 self.assertTrue(bool(node.get("device_telemetry_updated_at_utc")))
                 self.assertTrue(bool(node.get("environment_telemetry_updated_at_utc")))
+                self.assertTrue(bool(node.get("power_telemetry_updated_at_utc")))
             finally:
                 store.close()
 

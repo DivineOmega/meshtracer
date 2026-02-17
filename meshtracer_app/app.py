@@ -553,6 +553,8 @@ class MeshTracerController:
             "device_metrics": ("device", "device_metrics"),
             "environment": ("environment", "environment_metrics"),
             "environment_metrics": ("environment", "environment_metrics"),
+            "power": ("power", "power_metrics"),
+            "power_metrics": ("power", "power_metrics"),
         }
         return mapping.get(text)
 
@@ -574,6 +576,10 @@ class MeshTracerController:
             telemetry.get("environment_metrics"), dict
         ):
             telemetry_types.append("environment")
+        if isinstance(telemetry.get("powerMetrics"), dict) or isinstance(
+            telemetry.get("power_metrics"), dict
+        ):
+            telemetry_types.append("power")
         return telemetry_types
 
     @staticmethod
@@ -669,6 +675,29 @@ class MeshTracerController:
             except (TypeError, ValueError):
                 continue
         return None
+
+    @classmethod
+    def _packet_hops_away(cls, packet: Any) -> int | None:
+        if not isinstance(packet, dict):
+            return None
+
+        hops_away = cls._packet_int(packet, "hopsAway")
+        if hops_away is None:
+            hops_away = cls._packet_int(packet, "hops_away")
+        if hops_away is not None:
+            return hops_away if hops_away >= 0 else None
+
+        hop_start = cls._packet_int(packet, "hopStart")
+        if hop_start is None:
+            hop_start = cls._packet_int(packet, "hop_start")
+        hop_limit = cls._packet_int(packet, "hopLimit")
+        if hop_limit is None:
+            hop_limit = cls._packet_int(packet, "hop_limit")
+        if hop_start is None or hop_limit is None:
+            return None
+        if hop_limit < 0 or hop_start < hop_limit:
+            return None
+        return hop_start - hop_limit
 
     @staticmethod
     def _interface_local_node_num(interface: Any) -> int | None:
@@ -972,6 +1001,14 @@ class MeshTracerController:
             payload = telemetry_pb2_mod.Telemetry()
             if send_type == "environment_metrics":
                 payload.environment_metrics.CopyFrom(telemetry_pb2_mod.EnvironmentMetrics())
+            elif send_type == "power_metrics":
+                power_message_ctor = getattr(telemetry_pb2_mod, "PowerMetrics", None)
+                if not callable(power_message_ctor) or not hasattr(payload, "power_metrics"):
+                    return (
+                        False,
+                        "power telemetry request unsupported by installed meshtastic version",
+                    )
+                payload.power_metrics.CopyFrom(power_message_ctor())
             else:
                 payload.device_metrics.CopyFrom(telemetry_pb2_mod.DeviceMetrics())
 
@@ -1641,6 +1678,11 @@ class MeshTracerController:
             rx_time=rx_time,
             text=text,
         )
+        packet_for_storage = packet
+        packet_hops_away = self._packet_hops_away(packet)
+        if packet_hops_away is not None:
+            packet_for_storage = dict(packet)
+            packet_for_storage["hopsAway"] = int(packet_hops_away)
         chat_id = self._store.add_chat_message(
             mesh_host,
             text=text,
@@ -1652,7 +1694,7 @@ class MeshTracerController:
             to_node_num=to_node_num,
             packet_id=packet_id,
             rx_time=rx_time,
-            packet=packet,
+            packet=packet_for_storage,
             dedupe_key=dedupe_key,
         )
         if chat_id is None:

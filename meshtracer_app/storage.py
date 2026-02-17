@@ -12,7 +12,7 @@ from .meshtastic_helpers import extract_route_nums
 
 
 class SQLiteStore:
-    _TELEMETRY_TYPES = {"device", "environment"}
+    _TELEMETRY_TYPES = {"device", "environment", "power"}
 
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
@@ -1145,6 +1145,8 @@ class SQLiteStore:
                   td.updated_at_utc AS device_telemetry_updated_at_utc,
                   te.telemetry_json AS environment_telemetry_json,
                   te.updated_at_utc AS environment_telemetry_updated_at_utc,
+                  tp.telemetry_json AS power_telemetry_json,
+                  tp.updated_at_utc AS power_telemetry_updated_at_utc,
                   np.position_json AS position_json,
                   np.updated_at_utc AS position_updated_at_utc
                 FROM nodes AS n
@@ -1156,6 +1158,10 @@ class SQLiteStore:
                   ON te.mesh_host = n.mesh_host
                  AND te.node_num = n.node_num
                  AND te.telemetry_type = 'environment'
+                LEFT JOIN node_telemetry AS tp
+                  ON tp.mesh_host = n.mesh_host
+                 AND tp.node_num = n.node_num
+                 AND tp.telemetry_type = 'power'
                 LEFT JOIN node_positions AS np
                   ON np.mesh_host = n.mesh_host
                  AND np.node_num = n.node_num
@@ -1182,11 +1188,13 @@ class SQLiteStore:
         for row in node_rows:
             device_telemetry_raw = self._json_loads(row["device_telemetry_json"], {})
             environment_telemetry_raw = self._json_loads(row["environment_telemetry_json"], {})
+            power_telemetry_raw = self._json_loads(row["power_telemetry_json"], {})
             position_raw = self._json_loads(row["position_json"], {})
             device_telemetry = device_telemetry_raw if isinstance(device_telemetry_raw, dict) else {}
             environment_telemetry = (
                 environment_telemetry_raw if isinstance(environment_telemetry_raw, dict) else {}
             )
+            power_telemetry = power_telemetry_raw if isinstance(power_telemetry_raw, dict) else {}
             position = position_raw if isinstance(position_raw, dict) else {}
             nodes.append(
                 {
@@ -1217,6 +1225,10 @@ class SQLiteStore:
                     "environment_telemetry": environment_telemetry,
                     "environment_telemetry_updated_at_utc": str(
                         row["environment_telemetry_updated_at_utc"] or ""
+                    ),
+                    "power_telemetry": power_telemetry,
+                    "power_telemetry_updated_at_utc": str(
+                        row["power_telemetry_updated_at_utc"] or ""
                     ),
                     "position": position,
                     "position_updated_at_utc": str(row["position_updated_at_utc"] or ""),

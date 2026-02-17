@@ -17,12 +17,12 @@ Default web UI address: `http://127.0.0.1:8090/`
   - `Node Info`
   - `Traceroutes`
   - `Position`
-  - `Telemetry` (nested `Device` and `Environment` tabs)
+  - `Telemetry` (nested `Device`, `Environment`, and `Power` tabs)
 - Node actions from node details:
   - `Request Node Info`
   - `Run Traceroute`
   - `Request Position`
-  - `Request Device/Environment Telemetry`
+  - `Request Device/Environment/Power Telemetry`
   - Person button to open direct chat to selected node.
 - Chat UI:
   - Channel + direct recipients.
@@ -191,7 +191,7 @@ Main areas:
 Node details behavior:
 
 - Person button appears in node details header and opens direct chat to selected node.
-- Telemetry tabs (`Device`, `Environment`) are nested under top-level `Telemetry` tab.
+- Telemetry tabs (`Device`, `Environment`, `Power`) are nested under top-level `Telemetry` tab.
 - Position and node-info request actions are available from their respective tabs.
 
 Chat behavior:
@@ -238,7 +238,7 @@ All endpoints are served by embedded web server.
 - `/api/chat/send`
   - Body: `{ "recipient_kind": "channel|direct", "recipient_id": <int>, "text": "..." }`
 - `/api/telemetry/request`
-  - Body: `{ "node_num": <int>, "telemetry_type": "device|environment" }`
+  - Body: `{ "node_num": <int>, "telemetry_type": "device|environment|power" }`
 - `/api/nodeinfo/request`
   - Body: `{ "node_num": <int> }`
 - `/api/position/request`

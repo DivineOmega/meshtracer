@@ -378,6 +378,22 @@ class MapState:
             ):
                 changed = True
 
+        packet_power = self._pick_telemetry_metrics(telemetry, "powerMetrics", "power_metrics")
+        if packet_power:
+            power_metrics = (
+                self._pick_telemetry_metrics(node_info, "powerMetrics", "power_metrics")
+                if isinstance(node_info, dict)
+                else None
+            )
+            telemetry_payload = power_metrics if isinstance(power_metrics, dict) else packet_power
+            if telemetry_payload and self._store.upsert_node_telemetry(
+                self._mesh_host,
+                node_num,
+                "power",
+                telemetry_payload,
+            ):
+                changed = True
+
         if changed and bump_revision:
             self._bump_revision()
         return changed

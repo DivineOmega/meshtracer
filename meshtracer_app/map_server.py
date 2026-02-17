@@ -2301,10 +2301,33 @@ MAP_HTML = """<!doctype html>
       return `${short} / ${longName} (#${nodeNumInt})`;
     }
 
+    function intOrNull(value) {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return null;
+      return Math.trunc(parsed);
+    }
+
+    function chatPacketHopCount(message) {
+      const packet = message && message.packet && typeof message.packet === "object"
+        ? message.packet
+        : null;
+      if (!packet) return null;
+
+      const hopsAway = intOrNull(packet.hopsAway ?? packet.hops_away);
+      if (hopsAway !== null && hopsAway >= 0) return hopsAway;
+      return null;
+    }
+
     function chatMetaText(message) {
       const created = String(message && message.created_at_utc ? message.created_at_utc : "").trim();
-      if (!created) return "-";
-      return created;
+      const hopCount = chatPacketHopCount(message);
+      const hopText = hopCount === null
+        ? ""
+        : ` | ${hopCount} hop${hopCount === 1 ? "" : "s"}`;
+      if (!created) {
+        return hopText ? `-${hopText}` : "-";
+      }
+      return `${created}${hopText}`;
     }
 
     function setChatStatus(message, options = {}) {
@@ -2410,7 +2433,6 @@ MAP_HTML = """<!doctype html>
           focusNode(Math.trunc(nodeNum), {
             switchToNodesTab: true,
             scrollNodeListIntoView: true,
-            panZoom: false,
           });
         });
       }
@@ -2850,7 +2872,7 @@ MAP_HTML = """<!doctype html>
         || value === "node_info"
         || value === "traceroutes"
       ) return value;
-      if (value === "device" || value === "environment") return "telemetry";
+      if (value === "device" || value === "environment" || value === "power") return "telemetry";
       return "node_info";
     }
 
@@ -2863,11 +2885,13 @@ MAP_HTML = """<!doctype html>
 
     function nodeTelemetryTabValue(rawTab) {
       const value = String(rawTab || "").trim().toLowerCase();
+      if (value === "power") return "power";
       if (value === "environment") return "environment";
       return "device";
     }
 
     function nodeTelemetryTabLabel(tabValue) {
+      if (tabValue === "power") return "Power";
       if (tabValue === "environment") return "Environment";
       return "Device";
     }
@@ -2923,7 +2947,9 @@ MAP_HTML = """<!doctype html>
       const type = String(telemetryType || "").trim().toLowerCase();
       if (!Number.isFinite(nodeNumInt) || !type) return;
       if (state.selectedNodeNum !== nodeNumInt) return;
-      const statusPrefix = type === "environment" ? "environment" : "device";
+      const statusPrefix = type === "environment"
+        ? "environment"
+        : (type === "power" ? "power" : "device");
 
       setTelemetryRequestStatus(nodeNumInt, type, {
         busy: true,
@@ -4334,7 +4360,7 @@ MAP_HTML = """<!doctype html>
         const traceDisabled = (!canTraceNow || isBusyForNode) ? "disabled" : "";
         const nodeRecentTraces = recentTracesForNode(selectedNodeNum, 8);
         const rawSelectedNodeTab = String(state.selectedNodeDetailsTab || "").trim().toLowerCase();
-        if (rawSelectedNodeTab === "device" || rawSelectedNodeTab === "environment") {
+        if (rawSelectedNodeTab === "device" || rawSelectedNodeTab === "environment" || rawSelectedNodeTab === "power") {
           state.selectedNodeTelemetryTab = rawSelectedNodeTab;
         }
         const selectedNodeTab = nodeDetailsTabValue(rawSelectedNodeTab);
@@ -4456,9 +4482,26 @@ MAP_HTML = """<!doctype html>
             ? String(positionRequestStatus.message || "")
             : "";
           const positionRequestError = Boolean(positionRequestStatus && positionRequestStatus.error);
-          const positionData = node.position && typeof node.position === "object"
+          const positionRaw = node.position && typeof node.position === "object"
             ? node.position
             : {};
+          const positionData = {};
+          const hiddenPositionKeys = new Set([
+            "lat",
+            "lon",
+            "latitude",
+            "longitude",
+            "latitudei",
+            "longitudei",
+          ]);
+          for (const [rawKey, rawValue] of Object.entries(positionRaw)) {
+            const keyText = String(rawKey || "").trim();
+            const keyLower = keyText.toLowerCase();
+            const keyCompact = keyLower.replace(/_/g, "");
+            if (keyLower === "raw") continue;
+            if (hiddenPositionKeys.has(keyLower) || hiddenPositionKeys.has(keyCompact)) continue;
+            positionData[rawKey] = rawValue;
+          }
           const positionUpdatedAt = String(node.position_updated_at_utc || "");
           const positionSummaryRows = [
             { key: "Source", value: locKind },
@@ -4486,12 +4529,16 @@ MAP_HTML = """<!doctype html>
             </div>
           `;
         } else if (selectedNodeTab === "telemetry") {
-          const telemetryType = selectedTelemetryTab === "environment" ? "environment" : "device";
-          const telemetryLabel = telemetryType === "environment" ? "Environment" : "Device";
+          const telemetryType = selectedTelemetryTab === "environment"
+            ? "environment"
+            : (selectedTelemetryTab === "power" ? "power" : "device");
+          const telemetryLabel = telemetryType === "environment"
+            ? "Environment"
+            : (telemetryType === "power" ? "Power" : "Device");
           const telemetryButtonLabel = telemetryType === "environment"
             ? "Request Environment Telemetry"
-            : "Request Device Telemetry";
-          const telemetryTabItems = ["device", "environment"];
+            : (telemetryType === "power" ? "Request Power Telemetry" : "Request Device Telemetry");
+          const telemetryTabItems = ["device", "environment", "power"];
           const telemetryTabButtonsHtml = telemetryTabItems.map((tabValue) => {
             const activeClass = selectedTelemetryTab === tabValue ? "active" : "";
             return `
@@ -4504,10 +4551,12 @@ MAP_HTML = """<!doctype html>
           }).join("");
           const telemetryData = telemetryType === "environment"
             ? node.environment_telemetry
-            : node.device_telemetry;
+            : (telemetryType === "power" ? node.power_telemetry : node.device_telemetry);
           const telemetryUpdatedAt = telemetryType === "environment"
             ? String(node.environment_telemetry_updated_at_utc || "")
-            : String(node.device_telemetry_updated_at_utc || "");
+            : (telemetryType === "power"
+              ? String(node.power_telemetry_updated_at_utc || "")
+              : String(node.device_telemetry_updated_at_utc || ""));
           const requestStatus = telemetryRequestStatus(selectedNodeNum, telemetryType);
           const requestBusy = Boolean(requestStatus && requestStatus.busy);
           const requestMessage = requestStatus ? String(requestStatus.message || "") : "";
