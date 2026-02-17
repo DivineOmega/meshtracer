@@ -55,6 +55,8 @@ class MeshTracerController:
         self._emit_error = emit_error
 
         self._lock = threading.Lock()
+        self._snapshot_cv = threading.Condition(self._lock)
+        self._snapshot_revision = 1
         self._interface: Any | None = None
         self._mesh_pb2_mod: Any | None = None
         self._map_state: MapState | None = None
@@ -98,6 +100,33 @@ class MeshTracerController:
             merged_config = initial_config
 
         self._config = merged_config
+
+    def _bump_snapshot_revision_locked(self) -> int:
+        self._snapshot_revision += 1
+        try:
+            self._snapshot_cv.notify_all()
+        except Exception:
+            pass
+        return self._snapshot_revision
+
+    def _bump_snapshot_revision(self) -> int:
+        with self._lock:
+            return self._bump_snapshot_revision_locked()
+
+    def wait_for_snapshot_revision(self, since_revision: Any, timeout: float = 25.0) -> int:
+        try:
+            since_int = int(since_revision)
+        except (TypeError, ValueError):
+            since_int = 0
+        try:
+            wait_seconds = max(0.0, float(timeout))
+        except (TypeError, ValueError):
+            wait_seconds = 0.0
+
+        with self._snapshot_cv:
+            if self._snapshot_revision <= since_int:
+                self._snapshot_cv.wait(timeout=wait_seconds)
+            return self._snapshot_revision
 
     @staticmethod
     def _config_from_args(args: Any) -> dict[str, Any]:
@@ -323,6 +352,7 @@ class MeshTracerController:
                 )
             except Exception:
                 pass
+        self._bump_snapshot_revision()
 
         webhook_on = "on" if new_config.get("webhook_url") else "off"
         self._emit(
@@ -352,9 +382,11 @@ class MeshTracerController:
 
     def set_discovery_enabled(self, enabled: bool) -> None:
         self._discovery.set_enabled(enabled)
+        self._bump_snapshot_revision()
 
     def rescan_discovery(self) -> tuple[bool, str]:
         self._discovery.trigger_scan()
+        self._bump_snapshot_revision()
         return True, "scan_triggered"
 
     def run_traceroute(self, node_num: Any) -> tuple[bool, str]:
@@ -389,6 +421,7 @@ class MeshTracerController:
 
             self._manual_target_queue.append(node_num_int)
             queue_pos = len(self._manual_target_queue)
+            self._bump_snapshot_revision_locked()
 
         if wake_event is not None:
             wake_event.set()
@@ -413,6 +446,7 @@ class MeshTracerController:
             connection_error = self._connection_error
             running_node_num = self._current_traceroute_node_num
             queued_node_nums = list(self._manual_target_queue)
+            snapshot_revision = self._snapshot_revision
 
         if map_state is not None:
             payload = map_state.snapshot()
@@ -420,6 +454,7 @@ class MeshTracerController:
             payload = {
                 "generated_at_utc": utc_now(),
                 "mesh_host": "-",
+                "map_revision": 0,
                 "node_count": 0,
                 "trace_count": 0,
                 "nodes": [],
@@ -430,6 +465,10 @@ class MeshTracerController:
 
         # Always attach the latest runtime logs.
         payload["logs"] = self._log_buffer.tail(limit=500)
+        try:
+            payload["log_revision"] = int(self._log_buffer.latest_seq())
+        except Exception:
+            payload["log_revision"] = 0
         payload["connected"] = connection_state == "connected"
         payload["connection_state"] = connection_state
         payload["connected_host"] = connected_host
@@ -446,6 +485,7 @@ class MeshTracerController:
             "running_node_num": running_node_num,
             "queued_node_nums": queued_node_nums,
         }
+        payload["snapshot_revision"] = int(snapshot_revision)
         return payload
 
     def connect(self, host: str) -> tuple[bool, str]:
@@ -462,6 +502,7 @@ class MeshTracerController:
             self._connection_state = "connecting"
             self._connected_host = host
             self._connection_error = None
+            self._bump_snapshot_revision_locked()
 
         self._emit(f"[{utc_now()}] Connecting to Meshtastic node at {host}...")
 
@@ -480,6 +521,7 @@ class MeshTracerController:
             with self._lock:
                 self._connection_state = "error"
                 self._connection_error = "meshtastic is not installed"
+                self._bump_snapshot_revision_locked()
             if getattr(self._args, "web_ui", False):
                 self._discovery.set_enabled(True)
             return False, "meshtastic is not installed"
@@ -488,6 +530,7 @@ class MeshTracerController:
             with self._lock:
                 self._connection_state = "error"
                 self._connection_error = str(exc)
+                self._bump_snapshot_revision_locked()
             if getattr(self._args, "web_ui", False):
                 self._discovery.set_enabled(True)
             return False, str(exc)
@@ -499,6 +542,7 @@ class MeshTracerController:
             with self._lock:
                 self._connection_state = "error"
                 self._connection_error = str(exc)
+                self._bump_snapshot_revision_locked()
             if getattr(self._args, "web_ui", False):
                 self._discovery.set_enabled(True)
             return False, str(exc)
@@ -540,6 +584,7 @@ class MeshTracerController:
                 )
                 if traceroute_capture["result"] is not None:
                     map_state.add_traceroute(traceroute_capture["result"])
+                    self._bump_snapshot_revision()
             except Exception as exc:
                 traceroute_capture["result"] = None
                 self._emit_error(
@@ -583,6 +628,7 @@ class MeshTracerController:
             self._current_traceroute_node_num = None
             self._connection_state = "connected"
             self._connection_error = None
+            self._bump_snapshot_revision_locked()
 
         return True, "connected"
 
@@ -609,6 +655,7 @@ class MeshTracerController:
             self._connection_state = "disconnected"
             self._connection_error = None
             self._connected_host = None
+            self._bump_snapshot_revision_locked()
 
         if getattr(self._args, "web_ui", False):
             self._discovery.set_enabled(True)
@@ -662,6 +709,7 @@ class MeshTracerController:
                 map_state.update_node_from_num(connected_interface, packet.get("from"))
             else:
                 map_state.update_nodes_from_interface(connected_interface)
+            self._bump_snapshot_revision()
 
         def on_node_updated(node: Any = None, interface: Any = None, **_kwargs: Any) -> None:
             if interface is not None and interface is not connected_interface:
@@ -674,6 +722,7 @@ class MeshTracerController:
                     map_state.update_node_from_dict(node)
             else:
                 map_state.update_nodes_from_interface(connected_interface)
+            self._bump_snapshot_revision()
 
         try:
             pub_bus.subscribe(on_receive_update, "meshtastic.receive")
@@ -694,7 +743,9 @@ class MeshTracerController:
         with self._lock:
             if not self._manual_target_queue:
                 return None
-            return self._manual_target_queue.pop(0)
+            value = self._manual_target_queue.pop(0)
+            self._bump_snapshot_revision_locked()
+            return value
 
     @staticmethod
     def _target_from_num(interface: Any, node_num: int) -> dict[str, Any]:
@@ -744,6 +795,7 @@ class MeshTracerController:
 
             try:
                 map_state.update_nodes_from_interface(interface)
+                self._bump_snapshot_revision()
             except Exception as exc:
                 self._emit_error(f"[{utc_now()}] Warning: failed to refresh nodes: {exc}")
 
@@ -783,6 +835,7 @@ class MeshTracerController:
                     target_num = int(target.get("num"))
                     with self._lock:
                         self._current_traceroute_node_num = target_num
+                        self._bump_snapshot_revision_locked()
                     traceroute_capture["result"] = None
                     interface.sendTraceRoute(
                         dest=target_num,
@@ -829,6 +882,7 @@ class MeshTracerController:
                     with self._lock:
                         if target_num is not None and self._current_traceroute_node_num == target_num:
                             self._current_traceroute_node_num = None
+                            self._bump_snapshot_revision_locked()
 
             elapsed = time.time() - cycle_start
             sleep_seconds = max(0.0, interval_seconds - elapsed)
@@ -905,6 +959,7 @@ def main() -> int:
             try:
                 map_server = start_map_server(
                     controller.snapshot,
+                    controller.wait_for_snapshot_revision,
                     controller.connect,
                     controller.disconnect,
                     controller.run_traceroute,

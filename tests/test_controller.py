@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -250,6 +251,58 @@ class ControllerConfigTests(unittest.TestCase):
                 self.assertIsInstance(control, dict)
                 self.assertEqual(control.get("running_node_num"), 55)
                 self.assertEqual(control.get("queued_node_nums"), [42, 99])
+            finally:
+                store.close()
+
+    def test_snapshot_revision_increments_when_manual_queue_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                with controller._lock:
+                    controller._interface = _DummyInterface(local_num=77)
+                    controller._worker_thread = _DummyWorker()
+                    controller._worker_wake = threading.Event()
+                    controller._connection_state = "connected"
+
+                rev_before = int(controller.snapshot().get("snapshot_revision") or 0)
+                ok, detail = controller.run_traceroute(88)
+                self.assertTrue(ok, detail)
+                rev_after = int(controller.snapshot().get("snapshot_revision") or 0)
+                self.assertGreater(rev_after, rev_before)
+            finally:
+                store.close()
+
+    def test_wait_for_snapshot_revision_unblocks_after_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                since = int(controller.snapshot().get("snapshot_revision") or 0)
+
+                def bump() -> None:
+                    time.sleep(0.05)
+                    controller.set_discovery_enabled(False)
+
+                thread = threading.Thread(target=bump, daemon=True)
+                thread.start()
+                next_revision = controller.wait_for_snapshot_revision(since, timeout=1.0)
+                thread.join(timeout=1.0)
+                self.assertGreater(next_revision, since)
             finally:
                 store.close()
 

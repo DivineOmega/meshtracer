@@ -5,6 +5,7 @@ import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 from .common import utc_now
 
@@ -1447,12 +1448,21 @@ MAP_HTML = """<!doctype html>
       fitted: false,
       lastServerData: null,
       lastData: null,
+      lastSnapshotRevision: 0,
+      lastMapRevision: 0,
+      lastMapStyleSignature: "",
+      lastLogRevision: 0,
+      refreshInFlight: false,
+      sseConnected: false,
+      lastSseEventAtMs: 0,
+      sseSource: null,
       markerByNum: new Map(),
       edgePolylinesByTrace: new Map(),
       nodeByNum: new Map(),
       traceById: new Map(),
       selectedNodeNum: null,
       selectedTraceId: null,
+      lastDrawSelectedTraceId: null,
       activeTab: "log",
       nodeSearchQuery: "",
       nodeSortMode: "last_heard",
@@ -1463,6 +1473,8 @@ MAP_HTML = """<!doctype html>
       configTokenSet: false,
       configTokenTouched: false,
     };
+    const FALLBACK_POLL_MS_CONNECTED = 30000;
+    const FALLBACK_POLL_MS_DISCONNECTED = 3000;
 
     function reportClientError(message, options = {}) {
       const text = String(message || "").trim();
@@ -1656,6 +1668,39 @@ MAP_HTML = """<!doctype html>
       const value = Number(epochSec || 0);
       if (!Number.isFinite(value) || value <= 0) return "-";
       return new Date(value * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+    }
+
+    function numericRevision(value, fallback = 0) {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) return Math.max(0, Number(fallback) || 0);
+      return Math.trunc(parsed);
+    }
+
+    function snapshotRevisionOf(data) {
+      return numericRevision(data && data.snapshot_revision, state.lastSnapshotRevision);
+    }
+
+    function mapRevisionOf(data) {
+      return numericRevision(data && data.map_revision, state.lastMapRevision);
+    }
+
+    function logRevisionOf(data) {
+      const direct = numericRevision(data && data.log_revision, -1);
+      if (direct >= 0) return direct;
+      const logs = Array.isArray(data && data.logs) ? data.logs : [];
+      let maxSeq = 0;
+      for (const entry of logs) {
+        const seq = numericRevision(entry && entry.seq, 0);
+        if (seq > maxSeq) maxSeq = seq;
+      }
+      return maxSeq;
+    }
+
+    function mapStyleSignatureOf(data) {
+      const config = data && typeof data.config === "object" ? data.config : {};
+      const fresh = numericRevision(config.fresh_window, 0);
+      const mid = numericRevision(config.mid_window, 0);
+      return `${fresh}:${mid}`;
     }
 
     function shortNameFromNodeNum(rawNum) {
@@ -2588,9 +2633,21 @@ MAP_HTML = """<!doctype html>
       return nodeNums;
     }
 
-    function redrawFromLastServerData() {
+    function redrawFromLastServerData(options = {}) {
       if (!state.lastServerData) return false;
-      draw(state.lastServerData);
+      const forceMap = Boolean(options.forceMap);
+      const traceFilterChanged = state.selectedTraceId !== state.lastDrawSelectedTraceId;
+      if (forceMap || traceFilterChanged) {
+        draw(state.lastServerData);
+        return true;
+      }
+      applyNodeSelectionVisual();
+      applyTraceSelectionVisual();
+      if (state.lastData) {
+        renderNodeList(state.lastData.nodes || []);
+        renderTraceList(state.lastData.traces || []);
+      }
+      renderSelectionDetails();
       return true;
     }
 
@@ -3032,11 +3089,58 @@ MAP_HTML = """<!doctype html>
       applyNodeSelectionVisual();
       applyTraceSelectionVisual();
       renderSelectionDetails();
+      state.lastDrawSelectedTraceId = state.selectedTraceId;
 
       if (!state.fitted && bounds.length > 0) {
         map.fitBounds(bounds, { padding: [24, 24] });
         state.fitted = true;
       }
+    }
+
+    function applySnapshot(data, options = {}) {
+      const force = Boolean(options.force);
+      const snapshotRevision = snapshotRevisionOf(data);
+      if (!force && state.lastSnapshotRevision > 0 && snapshotRevision <= state.lastSnapshotRevision) {
+        return;
+      }
+
+      const mapRevision = mapRevisionOf(data);
+      const styleSignature = mapStyleSignatureOf(data);
+      const mapChanged = (
+        force
+        || !state.lastData
+        || mapRevision !== state.lastMapRevision
+        || styleSignature !== state.lastMapStyleSignature
+      );
+      const logsRevision = logRevisionOf(data);
+      state.lastServerData = data;
+
+      if (mapChanged) {
+        draw(data);
+        state.lastMapRevision = mapRevision;
+        state.lastMapStyleSignature = styleSignature;
+        state.lastLogRevision = logsRevision;
+      } else {
+        const displayNodes = Array.isArray(state.lastData?.nodes) ? state.lastData.nodes : [];
+        state.lastData = { ...data, nodes: displayNodes };
+
+        updateConnectionUi(data);
+        updateConfigUi(data);
+        updateFreshnessLegend(data && data.config);
+        const nodeTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "nodes");
+        if (nodeTab) nodeTab.textContent = `Nodes (${String(displayNodes.length)})`;
+        const traceTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "traces");
+        if (traceTab) traceTab.textContent = `Traces (${String(data.trace_count || 0)})`;
+        document.getElementById("updated").textContent = data.generated_at_utc || "-";
+
+        if (logsRevision !== state.lastLogRevision) {
+          renderLogs(data.logs || []);
+          state.lastLogRevision = logsRevision;
+        }
+        renderSelectionDetails();
+      }
+
+      state.lastSnapshotRevision = Math.max(state.lastSnapshotRevision, snapshotRevision);
     }
 
     function updateConnectionUi(data) {
@@ -3514,7 +3618,9 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
       }
     });
 
-    async function refresh() {
+    async function refresh(options = {}) {
+      if (state.refreshInFlight) return;
+      state.refreshInFlight = true;
       try {
         const response = await fetch("/api/map", { cache: "no-store" });
         if (!response.ok) {
@@ -3522,14 +3628,72 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
           return;
         }
         const data = await response.json();
-        draw(data);
+        applySnapshot(data, options);
       } catch (e) {
         reportClientError(String(e || "refresh failed"), { prefix: "UI error" });
+      } finally {
+        state.refreshInFlight = false;
       }
     }
 
-    refresh();
-    setInterval(refresh, 1000);
+    function startEventStream() {
+      if (typeof EventSource !== "function") {
+        reportClientError("EventSource is not available in this browser; using polling fallback.", { prefix: "Realtime" });
+        return;
+      }
+      if (state.sseSource) {
+        try {
+          state.sseSource.close();
+        } catch (_e) {
+        }
+        state.sseSource = null;
+      }
+      const since = Math.max(0, Number(state.lastSnapshotRevision) || 0);
+      const streamUrl = `/api/events?since=${encodeURIComponent(String(since))}`;
+      const stream = new EventSource(streamUrl);
+      state.sseSource = stream;
+
+      stream.addEventListener("open", () => {
+        state.sseConnected = true;
+        state.lastSseEventAtMs = Date.now();
+      });
+
+      stream.addEventListener("heartbeat", () => {
+        state.sseConnected = true;
+        state.lastSseEventAtMs = Date.now();
+      });
+
+      stream.addEventListener("snapshot", (event) => {
+        state.sseConnected = true;
+        state.lastSseEventAtMs = Date.now();
+        let data = null;
+        try {
+          data = JSON.parse(String(event && event.data ? event.data : "{}"));
+        } catch (e) {
+          reportClientError(String(e || "invalid snapshot event"), { prefix: "Realtime" });
+          return;
+        }
+        if (!data || typeof data !== "object") return;
+        applySnapshot(data);
+      });
+
+      stream.onerror = () => {
+        const staleMs = Date.now() - state.lastSseEventAtMs;
+        if (!Number.isFinite(staleMs) || staleMs > FALLBACK_POLL_MS_DISCONNECTED) {
+          state.sseConnected = false;
+        }
+      };
+    }
+
+    refresh({ force: true });
+    startEventStream();
+    setInterval(() => {
+      if (state.sseConnected) return;
+      refresh();
+    }, FALLBACK_POLL_MS_DISCONNECTED);
+    setInterval(() => {
+      refresh();
+    }, FALLBACK_POLL_MS_CONNECTED);
   </script>
 </body>
 </html>
@@ -3538,6 +3702,7 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
 
 def start_map_server(
     snapshot: Callable[[], dict[str, Any]],
+    wait_for_snapshot_revision: Callable[[int, float], int],
     connect: Callable[[str], tuple[bool, str]],
     disconnect: Callable[[], tuple[bool, str]],
     run_traceroute: Callable[[int], tuple[bool, str]],
@@ -3587,13 +3752,62 @@ def start_map_server(
             self.end_headers()
             self.wfile.write(body)
 
+        def _send_sse(self, *, event: str, payload: dict[str, Any], event_id: int | None = None) -> None:
+            if event_id is not None:
+                self.wfile.write(f"id: {int(event_id)}\n".encode("utf-8"))
+            self.wfile.write(f"event: {event}\n".encode("utf-8"))
+            data = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+            self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+            self.wfile.flush()
+
+        def _serve_events(self, since_revision: int) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+
+            latest = snapshot()
+            latest_revision = int(latest.get("snapshot_revision") or 0)
+            self._send_sse(event="snapshot", payload=latest, event_id=latest_revision)
+
+            cursor = latest_revision
+            heartbeat_seconds = 20.0
+            while True:
+                next_revision = wait_for_snapshot_revision(cursor, heartbeat_seconds)
+                if int(next_revision) <= cursor:
+                    self._send_sse(
+                        event="heartbeat",
+                        payload={"at_utc": utc_now(), "snapshot_revision": cursor},
+                    )
+                    continue
+
+                payload = snapshot()
+                payload_revision = int(payload.get("snapshot_revision") or next_revision)
+                cursor = max(cursor, payload_revision)
+                self._send_sse(event="snapshot", payload=payload, event_id=cursor)
+
         def do_GET(self) -> None:
-            path = self.path.split("?", 1)[0]
+            url = urlsplit(self.path)
+            path = url.path
             if path in ("/", "/map"):
                 self._send_html(MAP_HTML)
                 return
             if path == "/api/map":
                 self._send_json(snapshot())
+                return
+            if path == "/api/events":
+                query = parse_qs(url.query, keep_blank_values=False)
+                since_raw = query.get("since", [0])[0]
+                try:
+                    since = int(since_raw)
+                except (TypeError, ValueError):
+                    since = 0
+                try:
+                    self._serve_events(since)
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
                 return
             if path == "/api/config":
                 self._send_json({"ok": True, "config": get_config()})

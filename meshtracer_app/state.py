@@ -38,6 +38,10 @@ class RuntimeLogBuffer:
                 return [item.copy() for item in self._entries]
             return [item.copy() for item in list(self._entries)[-max_items:]]
 
+    def latest_seq(self) -> int:
+        with self._lock:
+            return max(0, self._next_seq - 1)
+
 
 class MapState:
     def __init__(
@@ -53,6 +57,17 @@ class MapState:
         self._max_traces = max_traces
         self._max_stored_traces = max_stored_traces
         self._log_buffer = log_buffer
+        self._revision_lock = threading.Lock()
+        self._revision = 1
+
+    def _bump_revision(self) -> int:
+        with self._revision_lock:
+            self._revision += 1
+            return self._revision
+
+    def revision(self) -> int:
+        with self._revision_lock:
+            return self._revision
 
     def update_nodes_from_interface(self, interface: Any) -> None:
         if not hasattr(interface, "nodesByNum"):
@@ -73,10 +88,13 @@ class MapState:
             summary["num"] = node_num
             summaries.append(summary)
         self._store.upsert_nodes(self._mesh_host, summaries)
+        if summaries:
+            self._bump_revision()
 
     def add_traceroute(self, result: dict[str, Any]) -> None:
         max_keep = self._max_stored_traces if self._max_stored_traces > 0 else None
         self._store.add_traceroute(self._mesh_host, result, max_keep=max_keep)
+        self._bump_revision()
 
     def update_node_from_num(self, interface: Any, node_num: Any) -> None:
         try:
@@ -85,6 +103,7 @@ class MapState:
             return
         summary = node_summary_from_num(interface, node_num_int)
         self._store.upsert_node(self._mesh_host, summary)
+        self._bump_revision()
 
     def update_node_from_dict(self, node: Any) -> None:
         if not isinstance(node, dict):
@@ -97,6 +116,7 @@ class MapState:
         summary = node_summary_from_node(node)
         summary["num"] = node_num_int
         self._store.upsert_node(self._mesh_host, summary)
+        self._bump_revision()
 
     def snapshot(self) -> dict[str, Any]:
         nodes, traces = self._store.snapshot(mesh_host=self._mesh_host, max_traces=self._max_traces)
@@ -132,6 +152,7 @@ class MapState:
         return {
             "generated_at_utc": utc_now(),
             "mesh_host": self._mesh_host,
+            "map_revision": self.revision(),
             "node_count": len(nodes),
             "trace_count": len(traces),
             "nodes": nodes,
@@ -141,17 +162,24 @@ class MapState:
         }
 
     def set_limits(self, *, max_traces: int | None = None, max_stored_traces: int | None = None) -> None:
+        changed = False
         if max_traces is not None:
             try:
                 max_traces_int = int(max_traces)
             except (TypeError, ValueError):
                 max_traces_int = self._max_traces
             if max_traces_int > 0:
-                self._max_traces = max_traces_int
+                if max_traces_int != self._max_traces:
+                    self._max_traces = max_traces_int
+                    changed = True
         if max_stored_traces is not None:
             try:
                 max_stored_traces_int = int(max_stored_traces)
             except (TypeError, ValueError):
                 max_stored_traces_int = self._max_stored_traces
             if max_stored_traces_int >= 0:
-                self._max_stored_traces = max_stored_traces_int
+                if max_stored_traces_int != self._max_stored_traces:
+                    self._max_stored_traces = max_stored_traces_int
+                    changed = True
+        if changed:
+            self._bump_revision()
