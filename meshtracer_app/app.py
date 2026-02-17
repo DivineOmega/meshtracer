@@ -745,27 +745,123 @@ class MeshTracerController:
         return f"rt:{rx_stamp}:{from_node_num}:{normalized_to_node}:{scope}:{text_hash}"
 
     @staticmethod
-    def _interface_channel_indexes(interface: Any) -> list[int]:
+    def _channel_name_text(value: Any) -> str | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return text
+
+    @staticmethod
+    def _field_value(obj: Any, key: str) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None)
+
+    @staticmethod
+    def _modem_preset_label(value: Any) -> str | None:
+        by_number = {
+            0: "LongFast",
+            1: "LongSlow",
+            2: "VeryLongSlow",
+            3: "MediumSlow",
+            4: "MediumFast",
+            5: "ShortSlow",
+            6: "ShortFast",
+            7: "LongModerate",
+            8: "ShortTurbo",
+            9: "LongTurbo",
+        }
+        try:
+            preset_num = int(value)
+        except (TypeError, ValueError):
+            preset_num = None
+        if preset_num is not None and preset_num in by_number:
+            return by_number[preset_num]
+
+        text = str(value or "").strip().upper()
+        if not text:
+            return None
+        if "." in text:
+            text = text.split(".")[-1]
+        if "_" in text:
+            parts = [part for part in text.split("_") if part]
+            if parts:
+                return "".join(part[:1].upper() + part[1:].lower() for part in parts)
+        return None
+
+    @classmethod
+    def _interface_primary_channel_label(cls, interface: Any) -> str | None:
+        local_node = getattr(interface, "localNode", None)
+        local_config = cls._field_value(local_node, "localConfig")
+        lora = cls._field_value(local_config, "lora")
+        preset_val = cls._field_value(lora, "modem_preset")
+        if preset_val is None:
+            preset_val = cls._field_value(lora, "modemPreset")
+        return cls._modem_preset_label(preset_val)
+
+    @staticmethod
+    def _channel_role_text(value: Any) -> str:
+        try:
+            role_num = int(value)
+        except (TypeError, ValueError):
+            role_num = None
+        if role_num is not None:
+            if role_num == 0:
+                return "DISABLED"
+            if role_num == 1:
+                return "PRIMARY"
+            if role_num == 2:
+                return "SECONDARY"
+            if role_num == 3:
+                return "ADMIN"
+        text = str(value or "").strip().upper()
+        if not text:
+            return ""
+        if "." in text:
+            text = text.split(".")[-1]
+        return text
+
+    @staticmethod
+    def _channel_role_label(role_text: str, channel_index: int) -> str | None:
+        role_upper = str(role_text or "").strip().upper()
+        if role_upper == "PRIMARY":
+            return "Primary"
+        if role_upper == "SECONDARY":
+            return f"Secondary {channel_index}" if channel_index > 0 else "Secondary"
+        if role_upper == "ADMIN":
+            return "Admin"
+        return None
+
+    @classmethod
+    def _interface_channel_indexes_and_names(cls, interface: Any) -> tuple[list[int], dict[int, str]]:
+        primary_channel_label = cls._interface_primary_channel_label(interface) or "Primary"
         channels_obj = getattr(getattr(interface, "localNode", None), "channels", None)
         if channels_obj is None:
-            return [0]
+            return [0], {0: primary_channel_label}
         try:
             channels = list(channels_obj)
         except TypeError:
-            return [0]
+            return [0], {0: primary_channel_label}
 
         values: list[int] = []
+        names: dict[int, str] = {}
         for channel in channels:
             role_val: Any = None
             index_val: Any = None
+            name_val: Any = None
+            settings_val: Any = None
             if isinstance(channel, dict):
                 role_val = channel.get("role")
                 index_val = channel.get("index")
+                name_val = channel.get("name")
+                settings_val = channel.get("settings")
             else:
                 role_val = getattr(channel, "role", None)
                 index_val = getattr(channel, "index", None)
+                name_val = getattr(channel, "name", None)
+                settings_val = getattr(channel, "settings", None)
 
-            role_text = str(role_val or "").strip().upper()
+            role_text = cls._channel_role_text(role_val)
             if role_val == 0 or role_text == "DISABLED":
                 continue
             try:
@@ -775,10 +871,30 @@ class MeshTracerController:
             if idx < 0:
                 continue
             values.append(idx)
+            name_text = cls._channel_name_text(name_val)
+            if name_text is None:
+                if isinstance(settings_val, dict):
+                    name_text = cls._channel_name_text(settings_val.get("name"))
+                elif settings_val is not None:
+                    name_text = cls._channel_name_text(getattr(settings_val, "name", None))
+            if name_text is None:
+                if idx == 0:
+                    name_text = primary_channel_label
+                else:
+                    name_text = cls._channel_role_label(role_text, idx)
+            if name_text is not None and idx not in names:
+                names[idx] = name_text
 
         if 0 not in values:
             values.insert(0, 0)
-        return sorted(set(values))
+        if 0 in values and 0 not in names:
+            names[0] = primary_channel_label
+        return sorted(set(values)), names
+
+    @classmethod
+    def _interface_channel_indexes(cls, interface: Any) -> list[int]:
+        values, _names = cls._interface_channel_indexes_and_names(interface)
+        return values
 
     @staticmethod
     def _node_log_descriptor_from_record(node_num: int, record: Any) -> str:
@@ -1063,16 +1179,18 @@ class MeshTracerController:
             except (TypeError, ValueError):
                 packet_id = None
 
-        dedupe_key = self._dedupe_key_for_chat_packet(
-            packet_id=packet_id,
-            from_node_num=local_num,
-            to_node_num=to_node_num,
-            message_type=kind,
-            channel_index=channel_index,
-            peer_node_num=peer_node_num,
-            rx_time=None,
-            text=message_text,
-        )
+        dedupe_key: str | None = None
+        if packet_id is not None:
+            dedupe_key = self._dedupe_key_for_chat_packet(
+                packet_id=packet_id,
+                from_node_num=local_num,
+                to_node_num=to_node_num,
+                message_type=kind,
+                channel_index=channel_index,
+                peer_node_num=peer_node_num,
+                rx_time=None,
+                text=message_text,
+            )
 
         mesh_host = str(map_state.mesh_host or "").strip()
         if mesh_host:
@@ -1193,17 +1311,27 @@ class MeshTracerController:
         chat_revision = 0
         chat_channels = [0]
         chat_recent_direct_node_nums: list[int] = []
+        chat_channel_names_by_index: dict[int, str] = {}
         if mesh_host:
             chat_revision = self._store.latest_chat_revision(str(mesh_host))
             for channel_index in self._store.list_chat_channels(str(mesh_host)):
                 if channel_index not in chat_channels:
                     chat_channels.append(channel_index)
             if interface is not None:
-                for channel_index in self._interface_channel_indexes(interface):
+                interface_channels, interface_channel_names = self._interface_channel_indexes_and_names(interface)
+                for channel_index in interface_channels:
                     if channel_index not in chat_channels:
                         chat_channels.append(channel_index)
+                for channel_index, channel_name in interface_channel_names.items():
+                    if channel_name:
+                        chat_channel_names_by_index[int(channel_index)] = str(channel_name)
             chat_recent_direct_node_nums = self._store.list_recent_direct_nodes(str(mesh_host), limit=30)
         chat_channels = sorted(set(int(value) for value in chat_channels if int(value) >= 0))
+        chat_channel_names = {
+            str(channel_index): chat_channel_names_by_index[channel_index]
+            for channel_index in chat_channels
+            if channel_index in chat_channel_names_by_index
+        }
 
         if map_state is not None:
             payload = map_state.snapshot()
@@ -1246,6 +1374,7 @@ class MeshTracerController:
         payload["chat"] = {
             "revision": int(chat_revision),
             "channels": chat_channels,
+            "channel_names": chat_channel_names,
             "recent_direct_node_nums": chat_recent_direct_node_nums,
         }
         payload["snapshot_revision"] = int(snapshot_revision)

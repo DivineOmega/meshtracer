@@ -50,6 +50,12 @@ class _DummyChatInterface(_DummyInterface):
         return {"id": self._next_id}
 
 
+class _DummyChatNoIdInterface(_DummyChatInterface):
+    def sendText(self, text: str, **kwargs: object) -> dict[str, object]:
+        self.sent_messages.append({"text": text, **kwargs})
+        return {}
+
+
 class _DummyTelemetryField:
     def __init__(self) -> None:
         self.last_copy = None
@@ -623,6 +629,39 @@ class ControllerConfigTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_send_chat_message_allows_repeated_text_without_packet_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                map_state = MapState(store=store, mesh_host="test:chat-no-id")
+                chat_iface = _DummyChatNoIdInterface(local_num=10)
+                with controller._lock:
+                    controller._interface = chat_iface
+                    controller._worker_thread = _DummyWorker()
+                    controller._map_state = map_state
+                    controller._connection_state = "connected"
+
+                ok, detail = controller.send_chat_message("channel", 0, "same text")
+                self.assertTrue(ok, detail)
+                ok, detail = controller.send_chat_message("channel", 0, "same text")
+                self.assertTrue(ok, detail)
+
+                ok, detail, channel_messages, _revision = controller.get_chat_messages("channel", 0, 100)
+                self.assertTrue(ok, detail)
+                self.assertEqual(len(channel_messages), 2)
+                self.assertEqual(channel_messages[0].get("text"), "same text")
+                self.assertEqual(channel_messages[1].get("text"), "same text")
+            finally:
+                store.close()
+
     def test_capture_chat_from_packet_handles_channel_and_direct(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"
@@ -694,9 +733,16 @@ class ControllerConfigTests(unittest.TestCase):
                 map_state = MapState(store=store, mesh_host="test:queue")
                 store.enqueue_traceroute_target("test:queue", 42)
                 store.enqueue_traceroute_target("test:queue", 99)
+                chat_iface = _DummyChatInterface(local_num=10)
+                chat_iface.localNode.channels = [
+                    {"index": 0, "role": "PRIMARY", "settings": {"name": "LongFast"}},
+                    {"index": 1, "role": "SECONDARY", "settings": {"name": "Ops"}},
+                    {"index": 2, "role": "DISABLED", "settings": {"name": "Disabled"}},
+                ]
                 with controller._lock:
                     controller._map_state = map_state
                     controller._current_traceroute_node_num = 55
+                    controller._interface = chat_iface
 
                 snap = controller.snapshot()
                 control = snap.get("traceroute_control")
@@ -710,6 +756,11 @@ class ControllerConfigTests(unittest.TestCase):
                 chat = snap.get("chat")
                 self.assertIsInstance(chat, dict)
                 self.assertIn(0, list(chat.get("channels") or []))
+                self.assertIn(1, list(chat.get("channels") or []))
+                channel_names = chat.get("channel_names") or {}
+                self.assertEqual(channel_names.get("0"), "LongFast")
+                self.assertEqual(channel_names.get("1"), "Ops")
+                self.assertNotIn("2", channel_names)
             finally:
                 store.close()
 

@@ -1301,7 +1301,8 @@ MAP_HTML = """<!doctype html>
       padding: 8px;
       flex: 1;
       min-height: 120px;
-      overflow: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -1317,6 +1318,7 @@ MAP_HTML = """<!doctype html>
       display: flex;
       flex-direction: column;
       max-width: 92%;
+      min-width: 0;
       gap: 3px;
     }
     .chat-row.incoming {
@@ -1353,8 +1355,29 @@ MAP_HTML = """<!doctype html>
       color: #9ab0d8;
       font-size: 10px;
       line-height: 1.25;
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       opacity: 0.9;
+    }
+    .chat-node-link {
+      border: 0;
+      padding: 0;
+      margin: 0;
+      background: transparent;
+      color: #b9cbec;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-underline-offset: 2px;
+    }
+    .chat-node-link:hover {
+      color: #d9e7ff;
     }
     .chat-status {
       color: #b5c5e4;
@@ -1409,6 +1432,15 @@ MAP_HTML = """<!doctype html>
       justify-content: space-between;
       gap: 12px;
       margin-bottom: 8px;
+    }
+    .trace-head-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+    .trace-head-chat.hidden {
+      display: none;
     }
     .trace-title {
       font-size: 14px;
@@ -1690,7 +1722,17 @@ MAP_HTML = """<!doctype html>
   <section id="traceDetails" class="hidden" aria-live="polite">
     <div class="trace-head">
       <div id="traceDetailsTitle" class="trace-title">Details</div>
-      <button id="traceDetailsClose" type="button" aria-label="Clear selection">X</button>
+      <div class="trace-head-actions">
+        <button id="traceDetailsNodeChat" class="icon-btn trace-head-chat hidden" type="button" aria-label="Message node">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 11c1.7 0 3-1.6 3-3.5S17.7 4 16 4s-3 1.6-3 3.5 1.3 3.5 3 3.5z"></path>
+            <path d="M8 12c2.2 0 4-2 4-4.5S10.2 3 8 3 4 5 4 7.5 5.8 12 8 12z"></path>
+            <path d="M2 21v-1c0-2.8 2.2-5 5-5h2"></path>
+            <path d="M12 21v-1c0-2.2 1.8-4 4-4h1c2.2 0 4 1.8 4 4v1"></path>
+          </svg>
+        </button>
+        <button id="traceDetailsClose" type="button" aria-label="Clear selection">X</button>
+      </div>
     </div>
     <div id="traceDetailsBody"></div>
   </section>
@@ -1958,6 +2000,7 @@ MAP_HTML = """<!doctype html>
     const traceDetails = document.getElementById("traceDetails");
     const traceDetailsTitle = document.getElementById("traceDetailsTitle");
     const traceDetailsBody = document.getElementById("traceDetailsBody");
+    const traceDetailsNodeChat = document.getElementById("traceDetailsNodeChat");
     const traceDetailsClose = document.getElementById("traceDetailsClose");
     const chatModal = document.getElementById("chatModal");
     const chatOpen = document.getElementById("chatOpen");
@@ -2036,6 +2079,7 @@ MAP_HTML = """<!doctype html>
       selectedNodeNum: null,
       selectedTraceId: null,
       selectedNodeDetailsTab: "node_info",
+      selectedNodeTelemetryTab: "device",
       lastDrawSelectedTraceId: null,
       spiderGroups: new Map(),
       activeSpiderGroupKey: null,
@@ -2136,6 +2180,34 @@ MAP_HTML = """<!doctype html>
       if (!channels.length) channels.push(0);
       channels.sort((a, b) => a - b);
       return channels;
+    }
+
+    function chatChannelNamesFromData(data) {
+      const namesRaw = data && data.chat && data.chat.channel_names;
+      if (!namesRaw || typeof namesRaw !== "object") {
+        return {};
+      }
+      const names = {};
+      for (const [rawIndex, rawName] of Object.entries(namesRaw)) {
+        const indexValue = Number(rawIndex);
+        if (!Number.isFinite(indexValue)) continue;
+        const channelIndex = Math.trunc(indexValue);
+        if (channelIndex < 0) continue;
+        const channelName = String(rawName || "").trim();
+        if (!channelName) continue;
+        names[channelIndex] = channelName;
+      }
+      return names;
+    }
+
+    function chatChannelLabel(channelIndex, channelNames = {}) {
+      const idx = Math.trunc(Number(channelIndex) || 0);
+      const name = channelNames && typeof channelNames === "object"
+        ? String(channelNames[idx] || "").trim()
+        : "";
+      if (name) return name;
+      if (idx === 0) return "Primary";
+      return `Channel ${idx}`;
     }
 
     function chatRecentDirectNodesFromData(data) {
@@ -2270,11 +2342,12 @@ MAP_HTML = """<!doctype html>
 
       const recipients = normalizeChatRecipient(data);
       const selectedKey = chatRecipientKey(state.chatRecipientKind, state.chatRecipientId);
+      const channelNames = chatChannelNamesFromData(data);
 
       const channelsOptionsHtml = recipients.channels.map((channelIndex) => {
         const value = chatRecipientKey("channel", channelIndex);
         const selectedAttr = selectedKey === value ? "selected" : "";
-        return `<option value="${escapeHtml(value)}" ${selectedAttr}>Channel ${escapeHtml(channelIndex)}</option>`;
+        return `<option value="${escapeHtml(value)}" ${selectedAttr}>${escapeHtml(chatChannelLabel(channelIndex, channelNames))}</option>`;
       }).join("");
 
       const recentOptionsHtml = recipients.recentDirect.map((nodeNum) => {
@@ -2312,24 +2385,39 @@ MAP_HTML = """<!doctype html>
             : "incoming";
           const text = String(message && message.text || "");
           const fromNodeNum = Number(message && message.from_node_num);
-          const sender = direction === "outgoing"
+          const senderNodeNum = Number.isFinite(fromNodeNum) ? Math.trunc(fromNodeNum) : null;
+          const senderLabel = senderNodeNum !== null
+            ? chatNodeLabel(senderNodeNum)
+            : "Node";
+          const senderHtml = direction === "outgoing"
             ? "You"
-            : Number.isFinite(fromNodeNum)
-              ? chatNodeLabel(Math.trunc(fromNodeNum))
-              : "Node";
-          const metaText = `${sender} | ${chatMetaText(message)}`;
+            : senderNodeNum !== null
+              ? `<button type="button" class="chat-node-link" data-chat-node-num="${senderNodeNum}" title="Open node details">${escapeHtml(senderLabel)}</button>`
+              : escapeHtml(senderLabel);
+          const createdAtText = escapeHtml(chatMetaText(message));
           return `
             <div class="chat-row ${direction}">
               <div class="chat-bubble">${escapeHtml(text)}</div>
-              <div class="chat-meta">${escapeHtml(metaText)}</div>
+              <div class="chat-meta">${senderHtml} | ${createdAtText}</div>
             </div>
           `;
         }).join("");
       }
+      for (const nodeBtn of chatMessages.querySelectorAll("button[data-chat-node-num]")) {
+        nodeBtn.addEventListener("click", () => {
+          const nodeNum = Number(nodeBtn.dataset.chatNodeNum);
+          if (!Number.isFinite(nodeNum)) return;
+          focusNode(Math.trunc(nodeNum), {
+            switchToNodesTab: true,
+            scrollNodeListIntoView: true,
+            panZoom: false,
+          });
+        });
+      }
 
       const connected = Boolean(data && data.connected);
       chatSend.disabled = state.chatSendBusy || !connected;
-      chatInput.disabled = state.chatSendBusy || !connected;
+      chatInput.disabled = !connected;
       if (!connected && !state.chatStatusMessage) {
         setChatStatus("Connect to a node to send messages.", { error: false });
       }
@@ -2398,7 +2486,8 @@ MAP_HTML = """<!doctype html>
 
     async function sendChatMessage() {
       if (state.chatSendBusy) return;
-      const text = String(chatInput && chatInput.value || "").trim();
+      const inputValue = String(chatInput && chatInput.value || "");
+      const text = inputValue.trim();
       if (!text) return;
       const recipientKind = String(state.chatRecipientKind || "").trim().toLowerCase();
       const recipientId = Math.trunc(Number(state.chatRecipientId) || 0);
@@ -2420,7 +2509,9 @@ MAP_HTML = """<!doctype html>
           setChatStatus(detail, { error: true });
           return;
         }
-        if (chatInput) chatInput.value = "";
+        if (chatInput && String(chatInput.value || "") === inputValue) {
+          chatInput.value = "";
+        }
         setChatStatus("Message sent.", { error: false });
         if (body && body.snapshot && typeof body.snapshot === "object") {
           applySnapshot(body.snapshot, { force: true });
@@ -2509,6 +2600,13 @@ MAP_HTML = """<!doctype html>
     traceDetailsClose.addEventListener("click", () => {
       clearSelection();
     });
+    if (traceDetailsNodeChat) {
+      traceDetailsNodeChat.addEventListener("click", () => {
+        const nodeNum = Number(state.selectedNodeNum);
+        if (!Number.isFinite(nodeNum)) return;
+        openChat({ nodeNum });
+      });
+    }
     map.on("click", () => {
       collapseSpiderGroup();
     });
@@ -2747,21 +2845,31 @@ MAP_HTML = """<!doctype html>
     function nodeDetailsTabValue(rawTab) {
       const value = String(rawTab || "").trim().toLowerCase();
       if (
-        value === "device"
-        || value === "environment"
+        value === "telemetry"
         || value === "position"
         || value === "node_info"
         || value === "traceroutes"
       ) return value;
+      if (value === "device" || value === "environment") return "telemetry";
       return "node_info";
     }
 
     function nodeDetailsTabLabel(tabValue) {
-      if (tabValue === "device") return "Device";
-      if (tabValue === "environment") return "Environment";
+      if (tabValue === "telemetry") return "Telemetry";
       if (tabValue === "position") return "Position";
       if (tabValue === "traceroutes") return "Traceroutes";
       return "Node Info";
+    }
+
+    function nodeTelemetryTabValue(rawTab) {
+      const value = String(rawTab || "").trim().toLowerCase();
+      if (value === "environment") return "environment";
+      return "device";
+    }
+
+    function nodeTelemetryTabLabel(tabValue) {
+      if (tabValue === "environment") return "Environment";
+      return "Device";
     }
 
     function renderInfoRows(rows, emptyMessage = "No data yet.") {
@@ -4143,10 +4251,12 @@ MAP_HTML = """<!doctype html>
       if (state.selectedTraceId !== null) {
         const trace = state.traceById.get(state.selectedTraceId);
         if (!trace) {
+          if (traceDetailsNodeChat) traceDetailsNodeChat.classList.add("hidden");
           traceDetails.classList.add("hidden");
           traceDetailsBody.innerHTML = "";
           return;
         }
+        if (traceDetailsNodeChat) traceDetailsNodeChat.classList.add("hidden");
 
         const originLabel = nodeFromRecord(trace?.packet?.to);
         const targetLabel = nodeFromRecord(trace?.packet?.from);
@@ -4189,10 +4299,12 @@ MAP_HTML = """<!doctype html>
       if (state.selectedNodeNum !== null) {
         const node = state.nodeByNum.get(state.selectedNodeNum);
         if (!node) {
+          if (traceDetailsNodeChat) traceDetailsNodeChat.classList.add("hidden");
           traceDetails.classList.add("hidden");
           traceDetailsBody.innerHTML = "";
           return;
         }
+        if (traceDetailsNodeChat) traceDetailsNodeChat.classList.remove("hidden");
 
         const nowSec = Date.now() / 1000;
         const hasPos = hasCoord(node);
@@ -4221,7 +4333,12 @@ MAP_HTML = """<!doctype html>
         const isBusyForNode = isRunningForNode || isQueuedForNode;
         const traceDisabled = (!canTraceNow || isBusyForNode) ? "disabled" : "";
         const nodeRecentTraces = recentTracesForNode(selectedNodeNum, 8);
-        const selectedNodeTab = nodeDetailsTabValue(state.selectedNodeDetailsTab);
+        const rawSelectedNodeTab = String(state.selectedNodeDetailsTab || "").trim().toLowerCase();
+        if (rawSelectedNodeTab === "device" || rawSelectedNodeTab === "environment") {
+          state.selectedNodeTelemetryTab = rawSelectedNodeTab;
+        }
+        const selectedNodeTab = nodeDetailsTabValue(rawSelectedNodeTab);
+        const selectedTelemetryTab = nodeTelemetryTabValue(state.selectedNodeTelemetryTab);
         const recentTraceSectionHtml = nodeRecentTraces.length
           ? nodeRecentTraces.map((trace) => {
               const traceId = Number(trace.trace_id);
@@ -4271,7 +4388,7 @@ MAP_HTML = """<!doctype html>
         const publicKeyText = formatNodePublicKey(node.public_key);
         const publicKeyTitle = String(node.public_key || "").trim();
 
-        const tabItems = ["node_info", "traceroutes", "position", "device", "environment"];
+        const tabItems = ["node_info", "traceroutes", "position", "telemetry"];
         const tabButtonsHtml = tabItems.map((tabValue) => {
           const activeClass = selectedNodeTab === tabValue ? "active" : "";
           return `
@@ -4368,12 +4485,23 @@ MAP_HTML = """<!doctype html>
               </span>
             </div>
           `;
-        } else {
-          const telemetryType = selectedNodeTab === "environment" ? "environment" : "device";
+        } else if (selectedNodeTab === "telemetry") {
+          const telemetryType = selectedTelemetryTab === "environment" ? "environment" : "device";
           const telemetryLabel = telemetryType === "environment" ? "Environment" : "Device";
           const telemetryButtonLabel = telemetryType === "environment"
             ? "Request Environment Telemetry"
             : "Request Device Telemetry";
+          const telemetryTabItems = ["device", "environment"];
+          const telemetryTabButtonsHtml = telemetryTabItems.map((tabValue) => {
+            const activeClass = selectedTelemetryTab === tabValue ? "active" : "";
+            return `
+              <button
+                class="node-detail-tab-btn ${activeClass}"
+                type="button"
+                data-node-telemetry-tab="${escapeHtml(tabValue)}"
+              >${escapeHtml(nodeTelemetryTabLabel(tabValue))}</button>
+            `;
+          }).join("");
           const telemetryData = telemetryType === "environment"
             ? node.environment_telemetry
             : node.device_telemetry;
@@ -4386,6 +4514,9 @@ MAP_HTML = """<!doctype html>
           const requestError = Boolean(requestStatus && requestStatus.error);
 
           tabBodyHtml = `
+            <div class="node-detail-tabs">
+              ${telemetryTabButtonsHtml}
+            </div>
             <div class="node-tab-panel">
               <div class="telemetry-updated">Last updated: ${escapeHtml(telemetryUpdatedAt || "-")}</div>
               ${renderTelemetryRows(telemetryData)}
@@ -4401,6 +4532,12 @@ MAP_HTML = """<!doctype html>
               <span id="requestTelemetryStatus" class="trace-action-status ${requestError ? "error" : ""}">
                 ${escapeHtml(requestMessage || (canTraceNow ? "" : "Connect to a node to request telemetry."))}
               </span>
+            </div>
+          `;
+        } else {
+          tabBodyHtml = `
+            <div class="node-tab-panel">
+              <div class="telemetry-empty">No details available for this tab.</div>
             </div>
           `;
         }
@@ -4420,15 +4557,21 @@ MAP_HTML = """<!doctype html>
             ${tabButtonsHtml}
           </div>
           ${tabBodyHtml}
-          <div class="trace-actions">
-            <button id="openNodeChatBtn" class="trace-action-btn" type="button">Message</button>
-          </div>
         `;
         for (const tabBtn of traceDetailsBody.querySelectorAll("button[data-node-tab]")) {
           tabBtn.addEventListener("click", () => {
             const tabValue = nodeDetailsTabValue(tabBtn.dataset.nodeTab);
             if (state.selectedNodeDetailsTab === tabValue) return;
             state.selectedNodeDetailsTab = tabValue;
+            renderSelectionDetails();
+          });
+        }
+        for (const telemetryTabBtn of traceDetailsBody.querySelectorAll("button[data-node-telemetry-tab]")) {
+          telemetryTabBtn.addEventListener("click", () => {
+            const tabValue = nodeTelemetryTabValue(telemetryTabBtn.dataset.nodeTelemetryTab);
+            if (state.selectedNodeTelemetryTab === tabValue && state.selectedNodeDetailsTab === "telemetry") return;
+            state.selectedNodeDetailsTab = "telemetry";
+            state.selectedNodeTelemetryTab = tabValue;
             renderSelectionDetails();
           });
         }
@@ -4501,7 +4644,7 @@ MAP_HTML = """<!doctype html>
               requestNodePosition(nodeNum);
             });
           }
-        } else {
+        } else if (selectedNodeTab === "telemetry") {
           const requestBtn = document.getElementById("requestTelemetryBtn");
           if (requestBtn) {
             requestBtn.addEventListener("click", () => {
@@ -4512,19 +4655,12 @@ MAP_HTML = """<!doctype html>
             });
           }
         }
-        const openNodeChatBtn = document.getElementById("openNodeChatBtn");
-        if (openNodeChatBtn) {
-          openNodeChatBtn.addEventListener("click", () => {
-            const nodeNum = Number(node.num);
-            if (!Number.isFinite(nodeNum)) return;
-            openChat({ nodeNum });
-          });
-        }
         traceDetails.classList.remove("hidden");
         positionChatModal();
         return;
       }
 
+      if (traceDetailsNodeChat) traceDetailsNodeChat.classList.add("hidden");
       traceDetails.classList.add("hidden");
       traceDetailsBody.innerHTML = "";
       positionChatModal();
