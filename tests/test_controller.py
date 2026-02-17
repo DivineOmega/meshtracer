@@ -410,6 +410,30 @@ class ControllerConfigTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_switching_to_automatic_wakes_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                wake_event = _set_connected_state(controller, store, local_num=1)
+
+                ok, detail = controller.set_config({"traceroute_behavior": "manual"})
+                self.assertTrue(ok, detail)
+                wake_event.clear()
+
+                ok, detail = controller.set_config({"traceroute_behavior": "automatic"})
+                self.assertTrue(ok, detail)
+                self.assertTrue(wake_event.is_set())
+            finally:
+                store.close()
+
     def test_manual_mode_worker_does_not_auto_pick_targets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"

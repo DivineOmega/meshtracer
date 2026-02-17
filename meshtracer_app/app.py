@@ -383,6 +383,7 @@ class MeshTracerController:
             current = dict(self._config)
             interface = self._interface
             map_state = self._map_state
+            wake_event = self._worker_wake
 
         ok, detail, new_config = self._merge_runtime_config(current, update)
         if not ok or new_config is None:
@@ -414,6 +415,8 @@ class MeshTracerController:
                 )
             except Exception:
                 pass
+        if wake_event is not None:
+            wake_event.set()
         self._bump_snapshot_revision()
 
         webhook_on = "on" if new_config.get("webhook_url") else "off"
