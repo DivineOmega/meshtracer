@@ -27,7 +27,7 @@ from .webhook import post_webhook
 
 DEFAULT_RUNTIME_CONFIG: dict[str, Any] = {
     "traceroute_behavior": "manual",
-    "interval": 5,
+    "interval": 0.5,
     "heard_window": 120,
     "fresh_window": 120,
     "mid_window": 480,
@@ -68,7 +68,6 @@ class MeshTracerController:
         self._worker_thread: threading.Thread | None = None
         self._worker_stop: threading.Event | None = None
         self._worker_wake: threading.Event | None = None
-        self._manual_target_queue: list[int] = []
         self._current_traceroute_node_num: int | None = None
 
         self._connected_host: str | None = None
@@ -131,6 +130,15 @@ class MeshTracerController:
 
     @staticmethod
     def _config_from_args(args: Any) -> dict[str, Any]:
+        def pick_float(name: str) -> float:
+            value = getattr(args, name, None)
+            if value is None:
+                return float(DEFAULT_RUNTIME_CONFIG[name])
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return float(DEFAULT_RUNTIME_CONFIG[name])
+
         def pick_int(name: str) -> int:
             value = getattr(args, name, None)
             if value is None:
@@ -158,7 +166,7 @@ class MeshTracerController:
 
         config = deepcopy(DEFAULT_RUNTIME_CONFIG)
         config["traceroute_behavior"] = pick_behavior("traceroute_behavior")
-        config["interval"] = max(1, pick_int("interval"))
+        config["interval"] = max((1.0 / 60.0), pick_float("interval"))
         config["heard_window"] = max(1, pick_int("heard_window"))
         config["hop_limit"] = max(1, pick_int("hop_limit"))
         config["max_map_traces"] = max(1, pick_int("max_map_traces"))
@@ -170,6 +178,15 @@ class MeshTracerController:
     @staticmethod
     def _config_overrides_from_args(args: Any) -> dict[str, Any]:
         update: dict[str, Any] = {}
+
+        def pick_float(name: str) -> float | None:
+            value = getattr(args, name, None)
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
 
         def pick_int(name: str) -> int | None:
             value = getattr(args, name, None)
@@ -186,8 +203,11 @@ class MeshTracerController:
                 return None
             return str(value)
 
+        interval = pick_float("interval")
+        if interval is not None:
+            update["interval"] = interval
+
         for key in [
-            "interval",
             "heard_window",
             "fresh_window",
             "mid_window",
@@ -235,6 +255,17 @@ class MeshTracerController:
         if not isinstance(update, dict):
             return False, "expected an object", None
 
+        def pick_float(name: str) -> float | None:
+            if name not in update:
+                return None
+            value = update.get(name)
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"invalid {name}")
+
         def pick_int(name: str) -> int | None:
             if name not in update:
                 return None
@@ -270,7 +301,7 @@ class MeshTracerController:
 
         try:
             traceroute_behavior = pick_behavior("traceroute_behavior")
-            interval = pick_int("interval")
+            interval = pick_float("interval")
             heard_window = pick_int("heard_window")
             fresh_window = pick_int("fresh_window")
             mid_window = pick_int("mid_window")
@@ -378,7 +409,7 @@ class MeshTracerController:
             try:
                 self._apply_interface_timeout(
                     interface,
-                    interval_minutes=int(new_config["interval"]),
+                    interval_minutes=float(new_config["interval"]),
                     hop_limit=int(new_config["hop_limit"]),
                 )
             except Exception:
@@ -389,17 +420,21 @@ class MeshTracerController:
         traceroute_behavior = str(
             new_config.get("traceroute_behavior") or DEFAULT_RUNTIME_CONFIG["traceroute_behavior"]
         )
+        interval_minutes = float(new_config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"])
         self._emit(
             f"[{utc_now()}] Config updated: traceroute_behavior={traceroute_behavior} "
-            f"interval={new_config['interval']}m "
+            f"interval={interval_minutes:g}m "
             f"heard_window={new_config['heard_window']}m hop_limit={new_config['hop_limit']} "
             f"fresh_window={new_config['fresh_window']}m mid_window={new_config['mid_window']}m "
             f"webhook={webhook_on}"
         )
         return True, "updated"
 
-    def _apply_interface_timeout(self, interface: Any, *, interval_minutes: int, hop_limit: int) -> None:
-        interval_seconds = max(1, int(interval_minutes)) * 60
+    def _apply_interface_timeout(self, interface: Any, *, interval_minutes: float, hop_limit: int) -> None:
+        try:
+            interval_seconds = max(1, int(float(interval_minutes) * 60.0))
+        except (TypeError, ValueError):
+            interval_seconds = max(1, int(float(DEFAULT_RUNTIME_CONFIG["interval"]) * 60.0))
         hop_limit_int = max(1, int(hop_limit))
         effective_timeout = max(1, (interval_seconds - 1) // hop_limit_int)
         if hasattr(interface, "_timeout") and hasattr(interface._timeout, "expireTimeout"):
@@ -424,6 +459,14 @@ class MeshTracerController:
         self._bump_snapshot_revision()
         return True, "scan_triggered"
 
+    def _active_mesh_host(self) -> str | None:
+        with self._lock:
+            map_state = self._map_state
+            if map_state is None:
+                return None
+            host = str(map_state.mesh_host or "").strip()
+            return host or None
+
     def run_traceroute(self, node_num: Any) -> tuple[bool, str]:
         try:
             node_num_int = int(node_num)
@@ -434,9 +477,16 @@ class MeshTracerController:
             interface = self._interface
             worker = self._worker_thread
             wake_event = self._worker_wake
+            map_state = self._map_state
             connected = self._connection_state == "connected"
 
-            if not connected or interface is None or worker is None or not worker.is_alive():
+            if (
+                not connected
+                or interface is None
+                or worker is None
+                or not worker.is_alive()
+                or map_state is None
+            ):
                 return False, "not connected"
 
             local_num = getattr(getattr(interface, "localNode", None), "nodeNum", None)
@@ -450,18 +500,71 @@ class MeshTracerController:
             if self._current_traceroute_node_num == node_num_int:
                 return True, f"traceroute already running for node #{node_num_int}"
 
-            if node_num_int in self._manual_target_queue:
-                queue_pos = self._manual_target_queue.index(node_num_int) + 1
-                return True, f"traceroute already queued for node #{node_num_int} (position {queue_pos})"
+            mesh_host = str(map_state.mesh_host or "").strip()
+            if not mesh_host:
+                return False, "not connected"
 
-            self._manual_target_queue.append(node_num_int)
-            queue_pos = len(self._manual_target_queue)
-            self._bump_snapshot_revision_locked()
+        existing = self._store.find_traceroute_queue_entry_by_node(mesh_host, node_num_int)
+        if isinstance(existing, dict):
+            status = str(existing.get("status") or "").strip().lower()
+            if status == "running":
+                return True, f"traceroute already running for node #{node_num_int}"
+            queue_pos = self._store.queued_position_for_entry(mesh_host, int(existing.get("queue_id") or -1))
+            if queue_pos <= 0:
+                queue_pos = 1
+            return True, f"traceroute already queued for node #{node_num_int} (position {queue_pos})"
+
+        queued = self._store.enqueue_traceroute_target(mesh_host, node_num_int)
+        if not isinstance(queued, dict):
+            retry = self._store.find_traceroute_queue_entry_by_node(mesh_host, node_num_int)
+            if isinstance(retry, dict):
+                status = str(retry.get("status") or "").strip().lower()
+                if status == "running":
+                    return True, f"traceroute already running for node #{node_num_int}"
+                queue_pos = self._store.queued_position_for_entry(mesh_host, int(retry.get("queue_id") or -1))
+                if queue_pos <= 0:
+                    queue_pos = 1
+                return True, f"traceroute already queued for node #{node_num_int} (position {queue_pos})"
+            return False, "failed to queue traceroute"
+
+        queue_pos = self._store.queued_position_for_entry(mesh_host, int(queued.get("queue_id") or -1))
+        if queue_pos <= 0:
+            queue_pos = 1
+        self._bump_snapshot_revision()
 
         if wake_event is not None:
             wake_event.set()
         self._emit(f"[{utc_now()}] Manual traceroute queued for node #{node_num_int}.")
         return True, f"queued traceroute to node #{node_num_int} (position {queue_pos})"
+
+    def remove_traceroute_queue_entry(self, queue_id: Any) -> tuple[bool, str]:
+        try:
+            queue_id_int = int(queue_id)
+        except (TypeError, ValueError):
+            return False, "invalid queue_id"
+        if queue_id_int <= 0:
+            return False, "invalid queue_id"
+
+        mesh_host = self._active_mesh_host()
+        if not mesh_host:
+            return False, "no active mesh partition"
+
+        entry = self._store.get_traceroute_queue_entry(mesh_host, queue_id_int)
+        if not isinstance(entry, dict):
+            return False, f"queue entry #{queue_id_int} not found"
+
+        status = str(entry.get("status") or "").strip().lower()
+        if status == "running":
+            return False, "cannot remove a running traceroute"
+
+        removed = self._store.remove_traceroute_queue_entry(mesh_host, queue_id_int)
+        if not removed:
+            return False, f"queue entry #{queue_id_int} not found"
+
+        self._bump_snapshot_revision()
+        node_num = int(entry.get("node_num") or 0)
+        self._emit(f"[{utc_now()}] Removed queued traceroute #{queue_id_int} (node #{node_num}).")
+        return True, f"removed queued traceroute #{queue_id_int}"
 
     def shutdown(self) -> None:
         try:
@@ -480,8 +583,17 @@ class MeshTracerController:
             connected_host = self._connected_host
             connection_error = self._connection_error
             running_node_num = self._current_traceroute_node_num
-            queued_node_nums = list(self._manual_target_queue)
+            mesh_host = map_state.mesh_host if map_state is not None else None
             snapshot_revision = self._snapshot_revision
+
+        queue_entries: list[dict[str, Any]] = []
+        if mesh_host:
+            queue_entries = self._store.list_traceroute_queue(str(mesh_host))
+        queued_node_nums = [
+            int(entry.get("node_num"))
+            for entry in queue_entries
+            if str(entry.get("status") or "").strip().lower() == "queued"
+        ]
 
         if map_state is not None:
             payload = map_state.snapshot()
@@ -519,6 +631,7 @@ class MeshTracerController:
         payload["traceroute_control"] = {
             "running_node_num": running_node_num,
             "queued_node_nums": queued_node_nums,
+            "queue_entries": queue_entries,
         }
         payload["snapshot_revision"] = int(snapshot_revision)
         return payload
@@ -599,6 +712,11 @@ class MeshTracerController:
             f"[{utc_now()}] SQLite history DB: {os.path.abspath(self._args.db_path)} "
             f"(partition: {partition_key})"
         )
+        recovered = self._store.requeue_running_traceroutes(partition_key)
+        if recovered > 0:
+            self._emit(
+                f"[{utc_now()}] Re-queued {recovered} in-progress traceroute(s) from a previous session."
+            )
 
         try:
             map_state.update_nodes_from_interface(interface)
@@ -636,7 +754,7 @@ class MeshTracerController:
 
         self._apply_interface_timeout(
             interface,
-            interval_minutes=int(config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"]),
+            interval_minutes=float(config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"]),
             hop_limit=int(config.get("hop_limit") or DEFAULT_RUNTIME_CONFIG["hop_limit"]),
         )
 
@@ -659,7 +777,6 @@ class MeshTracerController:
             self._worker_thread = worker
             self._worker_stop = stop_event
             self._worker_wake = wake_event
-            self._manual_target_queue = []
             self._current_traceroute_node_num = None
             self._connection_state = "connected"
             self._connection_error = None
@@ -683,7 +800,6 @@ class MeshTracerController:
             self._node_event_subscriptions = []
             self._interface = None
             self._mesh_pb2_mod = None
-            self._manual_target_queue = []
             self._current_traceroute_node_num = None
 
             # Keep _map_state around so history remains visible when disconnected.
@@ -774,14 +890,6 @@ class MeshTracerController:
 
         return pub_bus, subscriptions
 
-    def _pop_manual_target(self) -> int | None:
-        with self._lock:
-            if not self._manual_target_queue:
-                return None
-            value = self._manual_target_queue.pop(0)
-            self._bump_snapshot_revision_locked()
-            return value
-
     @staticmethod
     def _target_from_num(interface: Any, node_num: int) -> dict[str, Any]:
         nodes_by_num = getattr(interface, "nodesByNum", {})
@@ -824,7 +932,11 @@ class MeshTracerController:
             if traceroute_behavior not in ("automatic", "manual"):
                 traceroute_behavior = str(DEFAULT_RUNTIME_CONFIG["traceroute_behavior"])
             manual_only_mode = traceroute_behavior == "manual"
-            interval_seconds = int(config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"]) * 60
+            try:
+                interval_minutes = float(config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"])
+            except (TypeError, ValueError):
+                interval_minutes = float(DEFAULT_RUNTIME_CONFIG["interval"])
+            interval_seconds = max(1, int(interval_minutes * 60.0))
             heard_window_seconds = (
                 int(config.get("heard_window") or DEFAULT_RUNTIME_CONFIG["heard_window"]) * 60
             )
@@ -840,9 +952,23 @@ class MeshTracerController:
             except Exception as exc:
                 self._emit_error(f"[{utc_now()}] Warning: failed to refresh nodes: {exc}")
 
-            manual_node_num = self._pop_manual_target()
+            queue_mesh_host = str(map_state.mesh_host or "").strip()
+            manual_entry = (
+                self._store.pop_next_queued_traceroute(queue_mesh_host) if queue_mesh_host else None
+            )
+            manual_node_num = (
+                int(manual_entry.get("node_num"))
+                if isinstance(manual_entry, dict) and manual_entry.get("node_num") is not None
+                else None
+            )
+            manual_queue_id = (
+                int(manual_entry.get("queue_id"))
+                if isinstance(manual_entry, dict) and manual_entry.get("queue_id") is not None
+                else None
+            )
             manual_triggered = manual_node_num is not None
             if manual_triggered:
+                self._bump_snapshot_revision()
                 target = self._target_from_num(interface, int(manual_node_num))
                 last_heard_age = self._node_last_heard_age_seconds(target)
                 candidate_count = 1
@@ -901,7 +1027,7 @@ class MeshTracerController:
                                 "event": "meshtastic_traceroute_complete",
                                 "sent_at_utc": utc_now(),
                                 "mesh_host": connected_host,
-                                "interval_minutes": int(config.get("interval") or 0),
+                                "interval_minutes": interval_minutes,
                                 "interval_seconds": interval_seconds,
                                 "hop_limit": hop_limit,
                                 "selected_target": node_record_from_node(target),
@@ -926,10 +1052,14 @@ class MeshTracerController:
                         break
                     self._emit_error(f"[{utc_now()}] Traceroute failed: {exc}")
                 finally:
+                    if manual_triggered and manual_queue_id is not None and queue_mesh_host:
+                        self._store.remove_traceroute_queue_entry(queue_mesh_host, manual_queue_id)
                     with self._lock:
                         if target_num is not None and self._current_traceroute_node_num == target_num:
                             self._current_traceroute_node_num = None
                             self._bump_snapshot_revision_locked()
+                    if manual_triggered and manual_queue_id is not None:
+                        self._bump_snapshot_revision()
 
             if manual_only_mode:
                 continue
@@ -963,7 +1093,7 @@ def main() -> int:
         print(message, file=sys.stderr, flush=True)
 
     if args.interval is not None and args.interval <= 0:
-        emit_error("--interval must be > 0 minutes")
+        emit_error("--interval must be > 0 minutes (decimals allowed)")
         return 2
     if args.heard_window is not None and args.heard_window <= 0:
         emit_error("--heard-window must be > 0 minutes")
@@ -1013,6 +1143,7 @@ def main() -> int:
                     controller.connect,
                     controller.disconnect,
                     controller.run_traceroute,
+                    controller.remove_traceroute_queue_entry,
                     controller.rescan_discovery,
                     controller.get_public_config,
                     controller.set_config,

@@ -520,6 +520,24 @@ MAP_HTML = """<!doctype html>
     .panel.nodes-panel.active {
       display: flex;
     }
+    .traces-panel {
+      flex-direction: column;
+      min-height: 0;
+      height: 100%;
+    }
+    .panel.traces-panel.active {
+      display: flex;
+    }
+    .traces-toolbar {
+      border-bottom: 1px solid #253756;
+      padding: 8px 12px 8px 12px;
+      background: rgba(11, 20, 40, 0.6);
+      display: flex;
+      justify-content: flex-start;
+    }
+    .trace-manage-btn {
+      padding: 6px 10px;
+    }
     .nodes-search-wrap {
       border-bottom: 1px solid #253756;
       padding: 9px 12px 8px 12px;
@@ -847,6 +865,183 @@ MAP_HTML = """<!doctype html>
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+    .queue-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 2650;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .queue-modal.hidden {
+      display: none;
+    }
+    .queue-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(7, 10, 18, 0.62);
+      backdrop-filter: blur(2px);
+    }
+    .queue-card {
+      position: relative;
+      width: min(620px, 100%);
+      max-height: min(760px, calc(100vh - 40px));
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(10, 18, 35, 0.92);
+      border-radius: 16px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+      padding: 14px 14px 12px 14px;
+      backdrop-filter: blur(4px);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+    .queue-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .queue-title {
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #eef5ff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .queue-close {
+      width: 26px;
+      height: 26px;
+      border: 1px solid #2d4065;
+      border-radius: 10px;
+      background: rgba(16, 26, 52, 0.92);
+      color: #cfe0ff;
+      font-weight: 900;
+      cursor: pointer;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+    .queue-close:hover {
+      background: rgba(20, 35, 69, 0.98);
+    }
+    .queue-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 10px 12px 12px 12px;
+      box-sizing: border-box;
+    }
+    .queue-summary {
+      color: #b5c5e4;
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .queue-status {
+      margin-bottom: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(10, 18, 35, 0.55);
+      color: #c9d7f3;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+      display: none;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .queue-status.visible {
+      display: block;
+    }
+    .queue-status.error {
+      border-color: rgba(255, 85, 125, 0.42);
+      background: rgba(70, 15, 25, 0.55);
+      color: #ffd0dc;
+    }
+    .queue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .queue-item {
+      border: 1px solid #2c4064;
+      border-radius: 10px;
+      background: rgba(13, 22, 44, 0.55);
+      padding: 8px 10px;
+    }
+    .queue-item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .queue-item-title {
+      color: #eef5ff;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.3;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .queue-item-meta {
+      color: #9fb0d1;
+      font-size: 11px;
+      line-height: 1.35;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .queue-item-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+    .queue-status-pill {
+      border-radius: 999px;
+      border: 1px solid #344c75;
+      background: #122145;
+      color: #d9e4fb;
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      font-weight: 700;
+    }
+    .queue-status-pill.running {
+      border-color: #7f6b2f;
+      background: rgba(114, 92, 28, 0.35);
+      color: #ffe2a8;
+    }
+    .queue-status-pill.queued {
+      border-color: #2c5b95;
+      background: rgba(24, 49, 84, 0.45);
+      color: #cae2ff;
+    }
+    .queue-remove-btn {
+      border: 1px solid #2d4065;
+      border-radius: 8px;
+      background: #122145;
+      color: #d9e4fb;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 6px 9px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .queue-remove-btn:hover {
+      background: #19305f;
+    }
+    .queue-remove-btn:disabled {
+      opacity: 0.62;
+      cursor: not-allowed;
+    }
     .client-error {
       display: none;
       margin-top: 8px;
@@ -864,6 +1059,12 @@ MAP_HTML = """<!doctype html>
       display: block;
     }
     #nodeList {
+      height: auto;
+      flex: 1;
+      min-height: 0;
+      padding-top: 8px;
+    }
+    #traceList {
       height: auto;
       flex: 1;
       min-height: 0;
@@ -1260,7 +1461,10 @@ MAP_HTML = """<!doctype html>
           </div>
           <div id="nodeList" class="scroll-list"></div>
         </section>
-        <section class="panel" data-panel="traces">
+        <section class="panel traces-panel" data-panel="traces">
+          <div class="traces-toolbar">
+            <button id="manageTraceQueueBtn" class="trace-action-btn trace-manage-btn" type="button">Manage traceroute queue</button>
+          </div>
           <div id="traceList" class="scroll-list"></div>
         </section>
       </div>
@@ -1290,10 +1494,18 @@ MAP_HTML = """<!doctype html>
             </div>
             <div class="cfg-field">
               <div class="cfg-label-row">
-                <label class="cfg-label" for="cfgInterval">Interval (minutes)</label>
+                <label class="cfg-label" for="cfgInterval">Interval / Timeout Basis</label>
                 <button type="button" class="cfg-help" data-help="interval" aria-label="Help for interval">?</button>
               </div>
-              <input id="cfgInterval" class="cfg-input" type="number" min="1" step="1">
+              <select id="cfgInterval" class="cfg-input">
+                <option value="0.5">30 seconds</option>
+                <option value="1">1 minute</option>
+                <option value="2">2 minutes</option>
+                <option value="5">5 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+              </select>
             </div>
             <div class="cfg-field">
               <div class="cfg-label-row">
@@ -1394,6 +1606,21 @@ MAP_HTML = """<!doctype html>
     </div>
   </section>
 
+  <section id="queueModal" class="queue-modal hidden" aria-label="Traceroute Queue" role="dialog" aria-modal="true">
+    <div id="queueOverlay" class="queue-overlay" aria-hidden="true"></div>
+    <div class="queue-card" role="document">
+      <div class="queue-head">
+        <div class="queue-title">Traceroute Queue</div>
+        <button id="queueClose" class="queue-close" type="button" aria-label="Close traceroute queue">X</button>
+      </div>
+      <div class="queue-body">
+        <div id="queueSummary" class="queue-summary">Queue is empty.</div>
+        <div id="queueStatus" class="queue-status"></div>
+        <div id="queueList" class="queue-list"></div>
+      </div>
+    </div>
+  </section>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const map = L.map("map", { zoomControl: false }).setView([20, 0], 2);
@@ -1412,6 +1639,7 @@ MAP_HTML = """<!doctype html>
     const traceDetailsTitle = document.getElementById("traceDetailsTitle");
     const traceDetailsBody = document.getElementById("traceDetailsBody");
     const traceDetailsClose = document.getElementById("traceDetailsClose");
+    const manageTraceQueueBtn = document.getElementById("manageTraceQueueBtn");
     const nodeSearchInput = document.getElementById("nodeSearch");
     const nodeSortSelect = document.getElementById("nodeSort");
     const legendFreshText = document.getElementById("legendFreshText");
@@ -1453,6 +1681,12 @@ MAP_HTML = """<!doctype html>
     const helpClose = document.getElementById("helpClose");
     const helpTitle = document.getElementById("helpTitle");
     const helpBody = document.getElementById("helpBody");
+    const queueModal = document.getElementById("queueModal");
+    const queueOverlay = document.getElementById("queueOverlay");
+    const queueClose = document.getElementById("queueClose");
+    const queueSummary = document.getElementById("queueSummary");
+    const queueStatus = document.getElementById("queueStatus");
+    const queueList = document.getElementById("queueList");
     const clientError = document.getElementById("clientError");
 
     const state = {
@@ -1483,6 +1717,7 @@ MAP_HTML = """<!doctype html>
       configDefaults: null,
       configTokenSet: false,
       configTokenTouched: false,
+      queueRemoveBusyIds: new Set(),
     };
     const FALLBACK_POLL_MS_CONNECTED = 30000;
     const FALLBACK_POLL_MS_DISCONNECTED = 3000;
@@ -1712,6 +1947,180 @@ MAP_HTML = """<!doctype html>
       const fresh = numericRevision(config.fresh_window, 0);
       const mid = numericRevision(config.mid_window, 0);
       return `${fresh}:${mid}`;
+    }
+
+    function tracerouteControlFromData(data) {
+      if (!data || typeof data !== "object") return {};
+      const control = data.traceroute_control;
+      if (!control || typeof control !== "object") return {};
+      return control;
+    }
+
+    function tracerouteQueueEntriesFromData(data) {
+      const control = tracerouteControlFromData(data);
+      const rawEntries = Array.isArray(control.queue_entries) ? control.queue_entries : [];
+      const entries = [];
+      for (const rawEntry of rawEntries) {
+        if (!rawEntry || typeof rawEntry !== "object") continue;
+        const queueId = Number(rawEntry.queue_id);
+        const nodeNum = Number(rawEntry.node_num);
+        if (!Number.isFinite(queueId) || queueId <= 0) continue;
+        if (!Number.isFinite(nodeNum)) continue;
+        const statusRaw = String(rawEntry.status || "").trim().toLowerCase();
+        const status = statusRaw === "running" ? "running" : "queued";
+        entries.push({
+          queue_id: Math.trunc(queueId),
+          node_num: Math.trunc(nodeNum),
+          status,
+          created_at_utc: String(rawEntry.created_at_utc || ""),
+          updated_at_utc: String(rawEntry.updated_at_utc || ""),
+        });
+      }
+      return entries;
+    }
+
+    function updateQueueManageButton(data) {
+      if (!manageTraceQueueBtn) return;
+      const count = tracerouteQueueEntriesFromData(data).length;
+      if (count > 0) {
+        manageTraceQueueBtn.textContent = `Manage traceroute queue (${count})`;
+      } else {
+        manageTraceQueueBtn.textContent = "Manage traceroute queue";
+      }
+    }
+
+    function queueNodeLabel(nodeNum) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      const fallback = `Node #${nodeNumInt}`;
+      const node = state.nodeByNum.get(nodeNumInt);
+      if (!node) return fallback;
+      const short = nodeLabel(node);
+      const longName = node.long_name && String(node.long_name).trim()
+        ? String(node.long_name).trim()
+        : "";
+      if (!longName || longName.toLowerCase() === short.toLowerCase()) {
+        return `${short} (#${nodeNumInt})`;
+      }
+      return `${short} / ${longName} (#${nodeNumInt})`;
+    }
+
+    function queueStatusText(status) {
+      return status === "running" ? "Running" : "Queued";
+    }
+
+    function setQueueStatus(message, options = {}) {
+      if (!queueStatus) return;
+      const text = String(message || "").trim();
+      const isError = Boolean(options.error);
+      queueStatus.textContent = text;
+      queueStatus.classList.toggle("visible", Boolean(text));
+      queueStatus.classList.toggle("error", isError);
+    }
+
+    function renderQueueModal(data = state.lastServerData) {
+      if (!queueSummary || !queueList) return;
+      const entries = tracerouteQueueEntriesFromData(data);
+      const queuedCount = entries.filter((entry) => entry.status === "queued").length;
+      const runningCount = entries.length - queuedCount;
+      if (!entries.length) {
+        queueSummary.textContent = "Queue is empty.";
+        queueList.innerHTML = '<div class="empty">No traceroutes are queued.</div>';
+        return;
+      }
+      queueSummary.textContent = `${entries.length} total (${runningCount} running, ${queuedCount} queued)`;
+      queueList.innerHTML = entries.map((entry) => {
+        const queueId = Number(entry.queue_id);
+        const status = entry.status === "running" ? "running" : "queued";
+        const busy = state.queueRemoveBusyIds.has(queueId);
+        const removeDisabled = status === "running" || busy;
+        const removeText = status === "running"
+          ? "Running"
+          : busy
+            ? "Removing..."
+            : "Remove";
+        return `
+          <div class="queue-item">
+            <div class="queue-item-head">
+              <div class="queue-item-title">#${escapeHtml(queueId)} ${escapeHtml(queueNodeLabel(entry.node_num))}</div>
+            </div>
+            <div class="queue-item-meta">Queued at: ${escapeHtml(entry.created_at_utc || "-")}</div>
+            <div class="queue-item-meta">Updated at: ${escapeHtml(entry.updated_at_utc || "-")}</div>
+            <div class="queue-item-actions">
+              <span class="queue-status-pill ${status}">${escapeHtml(queueStatusText(status))}</span>
+              <button class="queue-remove-btn" type="button" data-queue-id="${escapeHtml(queueId)}" ${removeDisabled ? "disabled" : ""}>${escapeHtml(removeText)}</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      for (const btn of queueList.querySelectorAll("button[data-queue-id]")) {
+        btn.addEventListener("click", () => {
+          const queueId = Number(btn.dataset.queueId);
+          if (!Number.isFinite(queueId)) return;
+          removeQueueEntry(Math.trunc(queueId));
+        });
+      }
+    }
+
+    let lastQueueFocus = null;
+    function openQueueModal() {
+      if (!queueModal) return;
+      lastQueueFocus = document.activeElement;
+      setQueueStatus("", { error: false });
+      renderQueueModal(state.lastServerData);
+      queueModal.classList.remove("hidden");
+      try {
+        if (queueClose) queueClose.focus();
+      } catch (_e) {
+      }
+    }
+
+    function closeQueueModal() {
+      if (!queueModal) return;
+      queueModal.classList.add("hidden");
+      try {
+        if (manageTraceQueueBtn) {
+          manageTraceQueueBtn.focus();
+        } else if (lastQueueFocus && typeof lastQueueFocus.focus === "function") {
+          lastQueueFocus.focus();
+        }
+      } catch (_e) {
+      }
+      lastQueueFocus = null;
+    }
+
+    async function removeQueueEntry(queueId) {
+      const queueIdInt = Math.trunc(Number(queueId));
+      if (!Number.isFinite(queueIdInt) || queueIdInt <= 0) return;
+      if (state.queueRemoveBusyIds.has(queueIdInt)) return;
+      state.queueRemoveBusyIds.add(queueIdInt);
+      renderQueueModal(state.lastServerData);
+      setQueueStatus(`Removing queue entry #${queueIdInt}...`, { error: false });
+
+      try {
+        const { ok, body } = await apiPost("/api/traceroute/queue/remove", { queue_id: queueIdInt });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to remove queue entry";
+          setQueueStatus(detail, { error: true });
+          return;
+        }
+        const detail = body && body.detail
+          ? String(body.detail)
+          : `removed queued traceroute #${queueIdInt}`;
+        setQueueStatus(detail, { error: false });
+        if (body && body.snapshot && typeof body.snapshot === "object") {
+          applySnapshot(body.snapshot, { force: true });
+        } else {
+          await refresh({ force: true });
+        }
+      } catch (e) {
+        setQueueStatus(String(e || "failed to remove queue entry"), { error: true });
+      } finally {
+        state.queueRemoveBusyIds.delete(queueIdInt);
+        renderQueueModal(state.lastServerData);
+      }
     }
 
     function shortNameFromNodeNum(rawNum) {
@@ -3088,6 +3497,7 @@ MAP_HTML = """<!doctype html>
       updateConnectionUi(data);
       updateConfigUi(data);
       updateFreshnessLegend(data && data.config);
+      updateQueueManageButton(data);
       const nodeTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "nodes");
       if (nodeTab) nodeTab.textContent = `Nodes (${String(displayNodes.length)})`;
       const traceTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "traces");
@@ -3138,6 +3548,7 @@ MAP_HTML = """<!doctype html>
         updateConnectionUi(data);
         updateConfigUi(data);
         updateFreshnessLegend(data && data.config);
+        updateQueueManageButton(data);
         const nodeTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "nodes");
         if (nodeTab) nodeTab.textContent = `Nodes (${String(displayNodes.length)})`;
         const traceTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "traces");
@@ -3151,6 +3562,9 @@ MAP_HTML = """<!doctype html>
         renderSelectionDetails();
       }
 
+      if (queueModal && !queueModal.classList.contains("hidden")) {
+        renderQueueModal(data);
+      }
       state.lastSnapshotRevision = Math.max(state.lastSnapshotRevision, snapshotRevision);
     }
 
@@ -3295,13 +3709,50 @@ MAP_HTML = """<!doctype html>
       setCfgStatus("Unsaved changes.", { error: false });
     }
 
+    function normalizeIntervalMinutes(raw, fallback = 0.5) {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed <= 0) return Number(fallback);
+      return Math.round(parsed * 1000) / 1000;
+    }
+
+    function intervalOptionLabel(minutesRaw) {
+      const minutes = normalizeIntervalMinutes(minutesRaw, 0.5);
+      if (minutes < 1) {
+        const seconds = Math.max(1, Math.round(minutes * 60));
+        return `${seconds} seconds`;
+      }
+      const rounded = Math.round(minutes * 1000) / 1000;
+      const text = Number.isInteger(rounded) ? String(Math.trunc(rounded)) : String(rounded);
+      return `${text} minute${rounded === 1 ? "" : "s"}`;
+    }
+
+    function setIntervalSelectValue(rawMinutes) {
+      if (!cfgInterval) return;
+      const normalized = normalizeIntervalMinutes(rawMinutes, 0.5);
+      const value = String(normalized);
+      let hasOption = false;
+      for (const opt of Array.from(cfgInterval.options || [])) {
+        if (String(opt.value || "").trim() === value) {
+          hasOption = true;
+          break;
+        }
+      }
+      if (!hasOption) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = intervalOptionLabel(normalized);
+        cfgInterval.appendChild(opt);
+      }
+      cfgInterval.value = value;
+    }
+
     function applyConfigToForm(config) {
       if (!config) return;
       if (cfgTracerouteBehavior) {
         const behavior = String(config.traceroute_behavior ?? "manual").trim().toLowerCase();
         cfgTracerouteBehavior.value = behavior === "automatic" ? "automatic" : "manual";
       }
-      if (cfgInterval) cfgInterval.value = String(config.interval ?? "");
+      setIntervalSelectValue(config.interval ?? 0.5);
       if (cfgHeardWindow) cfgHeardWindow.value = String(config.heard_window ?? "");
       if (cfgFreshWindow) cfgFreshWindow.value = String(config.fresh_window ?? "");
       if (cfgMidWindow) cfgMidWindow.value = String(config.mid_window ?? "");
@@ -3363,9 +3814,15 @@ MAP_HTML = """<!doctype html>
         return Math.trunc(n);
       }
 
+      function asFloat(value, fallback) {
+        const n = Number(String(value || "").trim());
+        if (!Number.isFinite(n) || n <= 0) return fallback;
+        return n;
+      }
+
       const payload = {
         traceroute_behavior: String(cfgTracerouteBehavior?.value || "manual").trim().toLowerCase(),
-        interval: asInt(cfgInterval?.value, 5),
+        interval: asFloat(cfgInterval?.value, 0.5),
         heard_window: asInt(cfgHeardWindow?.value, 120),
         fresh_window: asInt(cfgFreshWindow?.value, 120),
         mid_window: asInt(cfgMidWindow?.value, 480),
@@ -3403,7 +3860,7 @@ MAP_HTML = """<!doctype html>
     function resetConfig() {
       const defaults = state.configDefaults || {
         traceroute_behavior: "manual",
-        interval: 5,
+        interval: 0.5,
         heard_window: 120,
         fresh_window: 120,
         mid_window: 480,
@@ -3427,10 +3884,10 @@ MAP_HTML = """<!doctype html>
 Automatic: Meshtracer continuously selects eligible recent nodes and runs traceroutes on an interval.`,
       },
       interval: {
-        title: "Interval (minutes)",
-        body: `How often Meshtracer attempts a traceroute.
+        title: "Interval / Timeout Basis",
+        body: `How often Meshtracer attempts a traceroute in Automatic mode.
 
-This is a start-to-start target cadence. If a traceroute takes a long time, Meshtracer will wait less (or not at all) before starting the next cycle.`,
+This is also the basis for Meshtastic per-hop timeout tuning. A lower interval (like 30 seconds) gives faster cadence but tighter timeout windows.`,
       },
       heard_window: {
         title: "Heard Window (minutes)",
@@ -3452,7 +3909,7 @@ Must be >= Fresh Window.`,
         title: "Hop Limit",
         body: `The maximum hop count used for Meshtastic traceroute.
 
-Higher values can discover longer routes but may take longer. Meshtracer also derives an internal per-hop timeout from (interval / hop_limit).`,
+Higher values can discover longer routes but may take longer. Meshtracer derives an internal per-hop timeout from (interval / hop_limit).`,
       },
       max_map_traces: {
         title: "Max Map Traces",
@@ -3586,6 +4043,7 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     connectBtn.addEventListener("click", () => connectToHost());
     disconnectBtn.addEventListener("click", () => disconnectFromHost());
     discoveryRescan.addEventListener("click", () => rescanDiscovery());
+    if (manageTraceQueueBtn) manageTraceQueueBtn.addEventListener("click", () => openQueueModal());
     if (cfgApply) cfgApply.addEventListener("click", () => applyConfig());
     if (cfgReset) cfgReset.addEventListener("click", () => resetConfig());
     if (configOpen) configOpen.addEventListener("click", () => openConfig());
@@ -3593,10 +4051,16 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     if (configClose) configClose.addEventListener("click", () => closeConfig());
     if (helpOverlay) helpOverlay.addEventListener("click", () => closeHelp());
     if (helpClose) helpClose.addEventListener("click", () => closeHelp());
+    if (queueOverlay) queueOverlay.addEventListener("click", () => closeQueueModal());
+    if (queueClose) queueClose.addEventListener("click", () => closeQueueModal());
     window.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       if (helpModal && !helpModal.classList.contains("hidden")) {
         closeHelp();
+        return;
+      }
+      if (queueModal && !queueModal.classList.contains("hidden")) {
+        closeQueueModal();
         return;
       }
       if (configModal && !configModal.classList.contains("hidden")) {
@@ -3731,6 +4195,7 @@ def start_map_server(
     connect: Callable[[str], tuple[bool, str]],
     disconnect: Callable[[], tuple[bool, str]],
     run_traceroute: Callable[[int], tuple[bool, str]],
+    remove_traceroute_queue_entry: Callable[[int], tuple[bool, str]],
     rescan_discovery: Callable[[], tuple[bool, str]],
     get_config: Callable[[], dict[str, Any]],
     set_config: Callable[[dict[str, Any]], tuple[bool, str]],
@@ -3892,6 +4357,21 @@ def start_map_server(
                     self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
                     return
                 ok, detail = run_traceroute(node_num)
+                status = 200 if ok else 400
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
+            if path == "/api/traceroute/queue/remove":
+                body, err = self._read_json_body()
+                if err is not None or body is None:
+                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                    return
+                queue_id_raw = body.get("queue_id")
+                try:
+                    queue_id = int(queue_id_raw)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "invalid_queue_id"}, status=400)
+                    return
+                ok, detail = remove_traceroute_queue_entry(queue_id)
                 status = 200 if ok else 400
                 self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
                 return

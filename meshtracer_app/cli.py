@@ -21,9 +21,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--interval",
-        type=int,
+        type=float,
         default=None,
-        help="Minutes between traceroute attempts (default: 5)",
+        help="Minutes between traceroute attempts (supports decimals; default: 0.5 = 30 seconds)",
     )
     parser.add_argument(
         "--heard-window",

@@ -124,6 +124,58 @@ class SQLiteStoreTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_traceroute_queue_flow_and_requeue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                first = store.enqueue_traceroute_target("node:q", 100)
+                second = store.enqueue_traceroute_target("node:q", 200)
+                self.assertIsNotNone(first)
+                self.assertIsNotNone(second)
+                self.assertEqual(store.queued_position_for_entry("node:q", int(first["queue_id"])), 1)
+                self.assertEqual(store.queued_position_for_entry("node:q", int(second["queue_id"])), 2)
+
+                running = store.pop_next_queued_traceroute("node:q")
+                self.assertIsNotNone(running)
+                self.assertEqual(running.get("status"), "running")
+                self.assertEqual(running.get("node_num"), 100)
+
+                entries = store.list_traceroute_queue("node:q")
+                self.assertEqual([entry.get("status") for entry in entries], ["running", "queued"])
+
+                requeued_count = store.requeue_running_traceroutes("node:q")
+                self.assertEqual(requeued_count, 1)
+                entries = store.list_traceroute_queue("node:q")
+                self.assertEqual([entry.get("status") for entry in entries], ["queued", "queued"])
+
+                removed = store.remove_traceroute_queue_entry("node:q", int(first["queue_id"]))
+                self.assertTrue(removed)
+                entries = store.list_traceroute_queue("node:q")
+                self.assertEqual(len(entries), 1)
+                self.assertEqual(entries[0].get("node_num"), 200)
+            finally:
+                store.close()
+
+    def test_traceroute_queue_persists_across_store_instances(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                entry = store.enqueue_traceroute_target("node:persist", 4242)
+                self.assertIsNotNone(entry)
+            finally:
+                store.close()
+
+            reopened = SQLiteStore(str(db_path))
+            try:
+                entries = reopened.list_traceroute_queue("node:persist")
+                self.assertEqual(len(entries), 1)
+                self.assertEqual(entries[0].get("node_num"), 4242)
+                self.assertEqual(entries[0].get("status"), "queued")
+            finally:
+                reopened.close()
+
 
 if __name__ == "__main__":
     unittest.main()

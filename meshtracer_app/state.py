@@ -60,6 +60,10 @@ class MapState:
         self._revision_lock = threading.Lock()
         self._revision = 1
 
+    @property
+    def mesh_host(self) -> str:
+        return self._mesh_host
+
     def _bump_revision(self) -> int:
         with self._revision_lock:
             self._revision += 1
