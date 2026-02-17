@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from meshtracer_app.app import MeshTracerController
-from meshtracer_app.state import RuntimeLogBuffer
+from meshtracer_app.state import MapState, RuntimeLogBuffer
 from meshtracer_app.storage import SQLiteStore
 
 
@@ -28,8 +28,18 @@ class _DummyInterface:
         self.nodesByNum = {}
 
 
+class _DummyTraceInterface(_DummyInterface):
+    def __init__(self, local_num: int | None = None) -> None:
+        super().__init__(local_num=local_num)
+        self.trace_calls: list[tuple[int, int]] = []
+
+    def sendTraceRoute(self, *, dest: int, hopLimit: int) -> None:
+        self.trace_calls.append((int(dest), int(hopLimit)))
+
+
 def _args(**overrides: object) -> SimpleNamespace:
     base: dict[str, object] = {
+        "traceroute_behavior": None,
         "interval": None,
         "heard_window": None,
         "fresh_window": None,
@@ -82,6 +92,7 @@ class ControllerConfigTests(unittest.TestCase):
                     emit_error=lambda _message: None,
                 )
                 self.assertEqual(controller.get_config().get("interval"), 5)
+                self.assertEqual(controller.get_config().get("traceroute_behavior"), "manual")
             finally:
                 store.close()
 
@@ -140,6 +151,30 @@ class ControllerConfigTests(unittest.TestCase):
                 ok, detail = controller.run_traceroute(123)
                 self.assertFalse(ok)
                 self.assertEqual(detail, "not connected")
+            finally:
+                store.close()
+
+    def test_set_config_validates_traceroute_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                ok, detail = controller.set_config({"traceroute_behavior": "automatic"})
+                self.assertTrue(ok, detail)
+                self.assertEqual(controller.get_config().get("traceroute_behavior"), "automatic")
+
+                ok, detail = controller.set_config({"traceroute_behavior": "invalid"})
+                self.assertFalse(ok)
+                self.assertIn("traceroute_behavior", detail)
+                self.assertEqual(controller.get_config().get("traceroute_behavior"), "automatic")
             finally:
                 store.close()
 
@@ -303,6 +338,43 @@ class ControllerConfigTests(unittest.TestCase):
                 next_revision = controller.wait_for_snapshot_revision(since, timeout=1.0)
                 thread.join(timeout=1.0)
                 self.assertGreater(next_revision, since)
+            finally:
+                store.close()
+
+    def test_manual_mode_worker_does_not_auto_pick_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                # Explicitly set mode to manual to ensure the behavior under test.
+                ok, detail = controller.set_config({"traceroute_behavior": "manual"})
+                self.assertTrue(ok, detail)
+
+                iface = _DummyTraceInterface(local_num=1)
+                map_state = MapState(store=store, mesh_host="test:manual")
+                traceroute_capture = {"result": None}
+                stop_event = threading.Event()
+                wake_event = threading.Event()
+
+                worker = threading.Thread(
+                    target=controller._traceroute_worker,
+                    args=(iface, map_state, traceroute_capture, stop_event, wake_event, "test-host"),
+                    daemon=True,
+                )
+                worker.start()
+                time.sleep(0.08)
+                stop_event.set()
+                wake_event.set()
+                worker.join(timeout=1.0)
+
+                self.assertEqual(iface.trace_calls, [])
             finally:
                 store.close()
 

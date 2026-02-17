@@ -1280,6 +1280,16 @@ MAP_HTML = """<!doctype html>
           <div class="cfg-grid">
             <div class="cfg-field">
               <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgTracerouteBehavior">Traceroute Behaviour</label>
+                <button type="button" class="cfg-help" data-help="traceroute_behavior" aria-label="Help for traceroute behaviour">?</button>
+              </div>
+              <select id="cfgTracerouteBehavior" class="cfg-input">
+                <option value="manual">Manual</option>
+                <option value="automatic">Automatic</option>
+              </select>
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
                 <label class="cfg-label" for="cfgInterval">Interval (minutes)</label>
                 <button type="button" class="cfg-help" data-help="interval" aria-label="Help for interval">?</button>
               </div>
@@ -1419,6 +1429,7 @@ MAP_HTML = """<!doctype html>
     const discoveryRescan = document.getElementById("discoveryRescan");
     const discoveryMeta = document.getElementById("discoveryMeta");
     const discoveryList = document.getElementById("discoveryList");
+    const cfgTracerouteBehavior = document.getElementById("cfgTracerouteBehavior");
     const cfgInterval = document.getElementById("cfgInterval");
     const cfgHeardWindow = document.getElementById("cfgHeardWindow");
     const cfgFreshWindow = document.getElementById("cfgFreshWindow");
@@ -3286,6 +3297,10 @@ MAP_HTML = """<!doctype html>
 
     function applyConfigToForm(config) {
       if (!config) return;
+      if (cfgTracerouteBehavior) {
+        const behavior = String(config.traceroute_behavior ?? "manual").trim().toLowerCase();
+        cfgTracerouteBehavior.value = behavior === "automatic" ? "automatic" : "manual";
+      }
       if (cfgInterval) cfgInterval.value = String(config.interval ?? "");
       if (cfgHeardWindow) cfgHeardWindow.value = String(config.heard_window ?? "");
       if (cfgFreshWindow) cfgFreshWindow.value = String(config.fresh_window ?? "");
@@ -3349,6 +3364,7 @@ MAP_HTML = """<!doctype html>
       }
 
       const payload = {
+        traceroute_behavior: String(cfgTracerouteBehavior?.value || "manual").trim().toLowerCase(),
         interval: asInt(cfgInterval?.value, 5),
         heard_window: asInt(cfgHeardWindow?.value, 120),
         fresh_window: asInt(cfgFreshWindow?.value, 120),
@@ -3386,6 +3402,7 @@ MAP_HTML = """<!doctype html>
 
     function resetConfig() {
       const defaults = state.configDefaults || {
+        traceroute_behavior: "manual",
         interval: 5,
         heard_window: 120,
         fresh_window: 120,
@@ -3403,6 +3420,12 @@ MAP_HTML = """<!doctype html>
     }
 
     const HELP_COPY = {
+      traceroute_behavior: {
+        title: "Traceroute Behaviour",
+        body: `Manual: Meshtracer only runs traceroutes you queue from the node details panel.
+
+Automatic: Meshtracer continuously selects eligible recent nodes and runs traceroutes on an interval.`,
+      },
       interval: {
         title: "Interval (minutes)",
         body: `How often Meshtracer attempts a traceroute.
@@ -3584,6 +3607,7 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
       btn.addEventListener("click", () => openHelp(btn.dataset.help));
     }
     for (const el of [
+      cfgTracerouteBehavior,
       cfgInterval,
       cfgHeardWindow,
       cfgFreshWindow,
@@ -3595,6 +3619,7 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     ]) {
       if (!el) continue;
       el.addEventListener("input", () => markConfigDirty());
+      el.addEventListener("change", () => markConfigDirty());
       el.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           applyConfig();

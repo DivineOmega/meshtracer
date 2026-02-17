@@ -26,6 +26,7 @@ from .webhook import post_webhook
 
 
 DEFAULT_RUNTIME_CONFIG: dict[str, Any] = {
+    "traceroute_behavior": "manual",
     "interval": 5,
     "heard_window": 120,
     "fresh_window": 120,
@@ -146,7 +147,17 @@ class MeshTracerController:
             text = str(value).strip()
             return text or None
 
+        def pick_behavior(name: str) -> str:
+            value = getattr(args, name, None)
+            if value is None:
+                return str(DEFAULT_RUNTIME_CONFIG["traceroute_behavior"])
+            text = str(value).strip().lower()
+            if text in ("automatic", "manual"):
+                return text
+            return str(DEFAULT_RUNTIME_CONFIG["traceroute_behavior"])
+
         config = deepcopy(DEFAULT_RUNTIME_CONFIG)
+        config["traceroute_behavior"] = pick_behavior("traceroute_behavior")
         config["interval"] = max(1, pick_int("interval"))
         config["heard_window"] = max(1, pick_int("heard_window"))
         config["hop_limit"] = max(1, pick_int("hop_limit"))
@@ -197,6 +208,10 @@ class MeshTracerController:
         if webhook_api_token is not None:
             update["webhook_api_token"] = webhook_api_token
 
+        traceroute_behavior = pick_any_str("traceroute_behavior")
+        if traceroute_behavior is not None:
+            update["traceroute_behavior"] = traceroute_behavior
+
         return update
 
     @staticmethod
@@ -240,7 +255,21 @@ class MeshTracerController:
             text = str(value).strip()
             return text or None
 
+        def pick_behavior(name: str) -> str | None:
+            if name not in update:
+                return None
+            value = update.get(name)
+            if value is None:
+                return None
+            text = str(value).strip().lower()
+            if not text:
+                return None
+            if text not in ("automatic", "manual"):
+                raise ValueError("traceroute_behavior must be 'automatic' or 'manual'")
+            return text
+
         try:
+            traceroute_behavior = pick_behavior("traceroute_behavior")
             interval = pick_int("interval")
             heard_window = pick_int("heard_window")
             fresh_window = pick_int("fresh_window")
@@ -283,6 +312,8 @@ class MeshTracerController:
         webhook_api_token = pick_str("webhook_api_token")
 
         new_config = dict(current)
+        if traceroute_behavior is not None:
+            new_config["traceroute_behavior"] = traceroute_behavior
         if interval is not None:
             new_config["interval"] = interval
         if heard_window is not None:
@@ -355,8 +386,12 @@ class MeshTracerController:
         self._bump_snapshot_revision()
 
         webhook_on = "on" if new_config.get("webhook_url") else "off"
+        traceroute_behavior = str(
+            new_config.get("traceroute_behavior") or DEFAULT_RUNTIME_CONFIG["traceroute_behavior"]
+        )
         self._emit(
-            f"[{utc_now()}] Config updated: interval={new_config['interval']}m "
+            f"[{utc_now()}] Config updated: traceroute_behavior={traceroute_behavior} "
+            f"interval={new_config['interval']}m "
             f"heard_window={new_config['heard_window']}m hop_limit={new_config['hop_limit']} "
             f"fresh_window={new_config['fresh_window']}m mid_window={new_config['mid_window']}m "
             f"webhook={webhook_on}"
@@ -783,6 +818,12 @@ class MeshTracerController:
     ) -> None:
         while not stop_event.is_set():
             config = self.get_config()
+            traceroute_behavior = str(
+                config.get("traceroute_behavior") or DEFAULT_RUNTIME_CONFIG["traceroute_behavior"]
+            ).strip().lower()
+            if traceroute_behavior not in ("automatic", "manual"):
+                traceroute_behavior = str(DEFAULT_RUNTIME_CONFIG["traceroute_behavior"])
+            manual_only_mode = traceroute_behavior == "manual"
             interval_seconds = int(config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"]) * 60
             heard_window_seconds = (
                 int(config.get("heard_window") or DEFAULT_RUNTIME_CONFIG["heard_window"]) * 60
@@ -805,6 +846,12 @@ class MeshTracerController:
                 target = self._target_from_num(interface, int(manual_node_num))
                 last_heard_age = self._node_last_heard_age_seconds(target)
                 candidate_count = 1
+            elif manual_only_mode:
+                if stop_event.is_set():
+                    break
+                if wake_event.wait():
+                    wake_event.clear()
+                continue
             else:
                 target, last_heard_age, candidate_count = pick_recent_node(
                     interface,
@@ -883,6 +930,9 @@ class MeshTracerController:
                         if target_num is not None and self._current_traceroute_node_num == target_num:
                             self._current_traceroute_node_num = None
                             self._bump_snapshot_revision_locked()
+
+            if manual_only_mode:
+                continue
 
             elapsed = time.time() - cycle_start
             sleep_seconds = max(0.0, interval_seconds - elapsed)
