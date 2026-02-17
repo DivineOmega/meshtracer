@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
         "--interval",
         type=float,
         default=None,
-        help="Minutes between traceroute attempts (supports decimals; default: 0.5 = 30 seconds)",
+        help="Minutes between traceroute attempts (supports decimals; default: 5)",
     )
     parser.add_argument(
         "--heard-window",

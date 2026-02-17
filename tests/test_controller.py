@@ -110,7 +110,7 @@ class ControllerConfigTests(unittest.TestCase):
                     emit_error=lambda _message: None,
                 )
                 self.assertEqual(controller.get_config().get("interval"), 5)
-                self.assertEqual(controller.get_config().get("traceroute_behavior"), "manual")
+                self.assertEqual(controller.get_config().get("traceroute_behavior"), "automatic")
             finally:
                 store.close()
 
@@ -196,7 +196,7 @@ class ControllerConfigTests(unittest.TestCase):
             finally:
                 store.close()
 
-    def test_interval_supports_30_seconds_and_defaults_to_it(self) -> None:
+    def test_interval_supports_30_seconds_and_defaults_to_5_minutes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"
             store = SQLiteStore(str(db_path))
@@ -208,7 +208,8 @@ class ControllerConfigTests(unittest.TestCase):
                     emit=lambda _message: None,
                     emit_error=lambda _message: None,
                 )
-                self.assertAlmostEqual(float(controller.get_config().get("interval") or 0.0), 0.5, places=3)
+                self.assertAlmostEqual(float(controller.get_config().get("interval") or 0.0), 5.0, places=3)
+                self.assertEqual(controller.get_config().get("traceroute_behavior"), "automatic")
 
                 ok, detail = controller.set_config({"interval": 0.5})
                 self.assertTrue(ok, detail)

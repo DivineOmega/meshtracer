@@ -1488,8 +1488,8 @@ MAP_HTML = """<!doctype html>
                 <button type="button" class="cfg-help" data-help="traceroute_behavior" aria-label="Help for traceroute behaviour">?</button>
               </div>
               <select id="cfgTracerouteBehavior" class="cfg-input">
-                <option value="manual">Manual</option>
                 <option value="automatic">Automatic</option>
+                <option value="manual">Manual</option>
               </select>
             </div>
             <div class="cfg-field">
@@ -1498,10 +1498,10 @@ MAP_HTML = """<!doctype html>
                 <button type="button" class="cfg-help" data-help="interval" aria-label="Help for interval">?</button>
               </div>
               <select id="cfgInterval" class="cfg-input">
+                <option value="5">5 minutes</option>
                 <option value="0.5">30 seconds</option>
                 <option value="1">1 minute</option>
                 <option value="2">2 minutes</option>
-                <option value="5">5 minutes</option>
                 <option value="10">10 minutes</option>
                 <option value="15">15 minutes</option>
                 <option value="30">30 minutes</option>
@@ -3709,14 +3709,14 @@ MAP_HTML = """<!doctype html>
       setCfgStatus("Unsaved changes.", { error: false });
     }
 
-    function normalizeIntervalMinutes(raw, fallback = 0.5) {
+    function normalizeIntervalMinutes(raw, fallback = 5) {
       const parsed = Number(raw);
       if (!Number.isFinite(parsed) || parsed <= 0) return Number(fallback);
       return Math.round(parsed * 1000) / 1000;
     }
 
     function intervalOptionLabel(minutesRaw) {
-      const minutes = normalizeIntervalMinutes(minutesRaw, 0.5);
+      const minutes = normalizeIntervalMinutes(minutesRaw, 5);
       if (minutes < 1) {
         const seconds = Math.max(1, Math.round(minutes * 60));
         return `${seconds} seconds`;
@@ -3728,7 +3728,7 @@ MAP_HTML = """<!doctype html>
 
     function setIntervalSelectValue(rawMinutes) {
       if (!cfgInterval) return;
-      const normalized = normalizeIntervalMinutes(rawMinutes, 0.5);
+      const normalized = normalizeIntervalMinutes(rawMinutes, 5);
       const value = String(normalized);
       let hasOption = false;
       for (const opt of Array.from(cfgInterval.options || [])) {
@@ -3749,10 +3749,10 @@ MAP_HTML = """<!doctype html>
     function applyConfigToForm(config) {
       if (!config) return;
       if (cfgTracerouteBehavior) {
-        const behavior = String(config.traceroute_behavior ?? "manual").trim().toLowerCase();
+        const behavior = String(config.traceroute_behavior ?? "automatic").trim().toLowerCase();
         cfgTracerouteBehavior.value = behavior === "automatic" ? "automatic" : "manual";
       }
-      setIntervalSelectValue(config.interval ?? 0.5);
+      setIntervalSelectValue(config.interval ?? 5);
       if (cfgHeardWindow) cfgHeardWindow.value = String(config.heard_window ?? "");
       if (cfgFreshWindow) cfgFreshWindow.value = String(config.fresh_window ?? "");
       if (cfgMidWindow) cfgMidWindow.value = String(config.mid_window ?? "");
@@ -3821,8 +3821,8 @@ MAP_HTML = """<!doctype html>
       }
 
       const payload = {
-        traceroute_behavior: String(cfgTracerouteBehavior?.value || "manual").trim().toLowerCase(),
-        interval: asFloat(cfgInterval?.value, 0.5),
+        traceroute_behavior: String(cfgTracerouteBehavior?.value || "automatic").trim().toLowerCase(),
+        interval: asFloat(cfgInterval?.value, 5),
         heard_window: asInt(cfgHeardWindow?.value, 120),
         fresh_window: asInt(cfgFreshWindow?.value, 120),
         mid_window: asInt(cfgMidWindow?.value, 480),
@@ -3859,8 +3859,8 @@ MAP_HTML = """<!doctype html>
 
     function resetConfig() {
       const defaults = state.configDefaults || {
-        traceroute_behavior: "manual",
-        interval: 0.5,
+        traceroute_behavior: "automatic",
+        interval: 5,
         heard_window: 120,
         fresh_window: 120,
         mid_window: 480,

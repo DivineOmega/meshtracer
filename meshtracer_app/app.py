@@ -26,8 +26,8 @@ from .webhook import post_webhook
 
 
 DEFAULT_RUNTIME_CONFIG: dict[str, Any] = {
-    "traceroute_behavior": "manual",
-    "interval": 0.5,
+    "traceroute_behavior": "automatic",
+    "interval": 5,
     "heard_window": 120,
     "fresh_window": 120,
     "mid_window": 480,
