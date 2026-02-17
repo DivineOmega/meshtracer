@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import os
 import sys
@@ -14,8 +15,10 @@ from .common import age_str, utc_now
 from .discovery import LanDiscoverer
 from .map_server import start_map_server
 from .meshtastic_helpers import (
+    extract_node_position,
     node_display,
     node_record_from_node,
+    node_record_from_num,
     parse_traceroute_response,
     pick_recent_node,
     resolve_mesh_partition_key,
@@ -34,8 +37,7 @@ DEFAULT_RUNTIME_CONFIG: dict[str, Any] = {
     "hop_limit": 7,
     "webhook_url": None,
     "webhook_api_token": None,
-    "max_map_traces": 800,
-    "max_stored_traces": 50000,
+    "traceroute_retention_hours": 720,
 }
 
 
@@ -169,8 +171,7 @@ class MeshTracerController:
         config["interval"] = max((1.0 / 60.0), pick_float("interval"))
         config["heard_window"] = max(1, pick_int("heard_window"))
         config["hop_limit"] = max(1, pick_int("hop_limit"))
-        config["max_map_traces"] = max(1, pick_int("max_map_traces"))
-        config["max_stored_traces"] = max(0, pick_int("max_stored_traces"))
+        config["traceroute_retention_hours"] = max(1, pick_int("traceroute_retention_hours"))
         config["webhook_url"] = pick_str("webhook_url")
         config["webhook_api_token"] = pick_str("webhook_api_token")
         return config
@@ -212,8 +213,7 @@ class MeshTracerController:
             "fresh_window",
             "mid_window",
             "hop_limit",
-            "max_map_traces",
-            "max_stored_traces",
+            "traceroute_retention_hours",
         ]:
             value = pick_int(key)
             if value is None:
@@ -306,8 +306,7 @@ class MeshTracerController:
             fresh_window = pick_int("fresh_window")
             mid_window = pick_int("mid_window")
             hop_limit = pick_int("hop_limit")
-            max_map_traces = pick_int("max_map_traces")
-            max_stored_traces = pick_int("max_stored_traces")
+            traceroute_retention_hours = pick_int("traceroute_retention_hours")
         except ValueError as exc:
             return False, str(exc), None
 
@@ -334,10 +333,8 @@ class MeshTracerController:
             return False, "mid_window must be >= fresh_window", None
         if hop_limit is not None and hop_limit <= 0:
             return False, "hop_limit must be > 0", None
-        if max_map_traces is not None and max_map_traces <= 0:
-            return False, "max_map_traces must be > 0", None
-        if max_stored_traces is not None and max_stored_traces < 0:
-            return False, "max_stored_traces must be >= 0", None
+        if traceroute_retention_hours is not None and traceroute_retention_hours <= 0:
+            return False, "traceroute_retention_hours must be > 0", None
 
         webhook_url = pick_str("webhook_url")
         webhook_api_token = pick_str("webhook_api_token")
@@ -355,10 +352,8 @@ class MeshTracerController:
             new_config["mid_window"] = mid_window
         if hop_limit is not None:
             new_config["hop_limit"] = hop_limit
-        if max_map_traces is not None:
-            new_config["max_map_traces"] = max_map_traces
-        if max_stored_traces is not None:
-            new_config["max_stored_traces"] = max_stored_traces
+        if traceroute_retention_hours is not None:
+            new_config["traceroute_retention_hours"] = traceroute_retention_hours
         if webhook_url is not None or "webhook_url" in update:
             new_config["webhook_url"] = webhook_url
         if webhook_api_token is not None or "webhook_api_token" in update:
@@ -368,6 +363,9 @@ class MeshTracerController:
         for key, value in DEFAULT_RUNTIME_CONFIG.items():
             if key not in new_config:
                 new_config[key] = value
+        for deprecated_key in ("max_map_traces", "max_stored_traces"):
+            if deprecated_key in new_config:
+                del new_config[deprecated_key]
 
         return True, "updated", new_config
 
@@ -399,9 +397,11 @@ class MeshTracerController:
 
         if map_state is not None:
             try:
-                map_state.set_limits(
-                    max_traces=int(new_config["max_map_traces"]),
-                    max_stored_traces=int(new_config["max_stored_traces"]),
+                map_state.set_traceroute_retention_hours(
+                    int(
+                        new_config["traceroute_retention_hours"]
+                        or DEFAULT_RUNTIME_CONFIG["traceroute_retention_hours"]
+                    )
                 )
             except Exception:
                 pass
@@ -424,11 +424,16 @@ class MeshTracerController:
             new_config.get("traceroute_behavior") or DEFAULT_RUNTIME_CONFIG["traceroute_behavior"]
         )
         interval_minutes = float(new_config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"])
+        traceroute_retention_hours = int(
+            new_config.get("traceroute_retention_hours")
+            or DEFAULT_RUNTIME_CONFIG["traceroute_retention_hours"]
+        )
         self._emit(
             f"[{utc_now()}] Config updated: traceroute_behavior={traceroute_behavior} "
             f"interval={interval_minutes:g}m "
             f"heard_window={new_config['heard_window']}m hop_limit={new_config['hop_limit']} "
             f"fresh_window={new_config['fresh_window']}m mid_window={new_config['mid_window']}m "
+            f"traceroute_retention_hours={traceroute_retention_hours} "
             f"webhook={webhook_on}"
         )
         return True, "updated"
@@ -571,6 +576,249 @@ class MeshTracerController:
             telemetry_types.append("environment")
         return telemetry_types
 
+    @staticmethod
+    def _packet_decoded(packet: Any) -> dict[str, Any] | None:
+        if not isinstance(packet, dict):
+            return None
+        decoded = packet.get("decoded")
+        return decoded if isinstance(decoded, dict) else None
+
+    @classmethod
+    def _packet_portnum(cls, packet: Any) -> str:
+        decoded = cls._packet_decoded(packet)
+        if not isinstance(decoded, dict):
+            return ""
+        value = decoded.get("portnum")
+        if value is None:
+            value = decoded.get("portNum")
+        if value is None:
+            return ""
+        if isinstance(value, (int, float)):
+            try:
+                value_int = int(value)
+            except (TypeError, ValueError):
+                value_int = None
+            if value_int is not None:
+                if value_int == 1:
+                    return "TEXT_MESSAGE_APP"
+                if value_int == 7:
+                    return "TEXT_MESSAGE_COMPRESSED_APP"
+                if value_int == 3:
+                    return "POSITION_APP"
+                if value_int == 4:
+                    return "NODEINFO_APP"
+                if value_int == 67:
+                    return "TELEMETRY_APP"
+                return str(value_int)
+        text = str(value).strip().upper()
+        if text.isdigit():
+            return cls._packet_portnum({"decoded": {"portnum": int(text)}})
+        return text
+
+    @classmethod
+    def _is_node_info_packet(cls, packet: Any) -> bool:
+        decoded = cls._packet_decoded(packet)
+        if isinstance(decoded, dict):
+            if isinstance(decoded.get("user"), dict):
+                return True
+            if isinstance(decoded.get("nodeInfo"), dict):
+                return True
+            if isinstance(decoded.get("node_info"), dict):
+                return True
+            if isinstance(decoded.get("nodeinfo"), dict):
+                return True
+        return cls._packet_portnum(packet) == "NODEINFO_APP"
+
+    @classmethod
+    def _is_position_packet(cls, packet: Any) -> bool:
+        decoded = cls._packet_decoded(packet)
+        if isinstance(decoded, dict) and isinstance(decoded.get("position"), dict):
+            return True
+        return cls._packet_portnum(packet) == "POSITION_APP"
+
+    @classmethod
+    def _packet_position(cls, packet: Any) -> tuple[float | None, float | None]:
+        decoded = cls._packet_decoded(packet)
+        if not isinstance(decoded, dict):
+            return None, None
+        position = decoded.get("position")
+        if not isinstance(position, dict):
+            return None, None
+        return extract_node_position({"position": position})
+
+    @staticmethod
+    def _packet_int(packet: Any, key: str) -> int | None:
+        if not isinstance(packet, dict):
+            return None
+        value = packet.get(key)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _packet_float(packet: Any, *keys: str) -> float | None:
+        if not isinstance(packet, dict):
+            return None
+        for key in keys:
+            if key not in packet:
+                continue
+            value = packet.get(key)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    @staticmethod
+    def _interface_local_node_num(interface: Any) -> int | None:
+        local_num = getattr(getattr(interface, "localNode", None), "nodeNum", None)
+        try:
+            return int(local_num) if local_num is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _is_text_message_packet(cls, packet: Any) -> bool:
+        portnum = cls._packet_portnum(packet)
+        return portnum in ("TEXT_MESSAGE_APP", "TEXT_MESSAGE_COMPRESSED_APP")
+
+    @classmethod
+    def _packet_text(cls, packet: Any) -> str | None:
+        decoded = cls._packet_decoded(packet)
+        if not isinstance(decoded, dict):
+            return None
+        text_value = decoded.get("text")
+        if isinstance(text_value, str):
+            text = text_value.strip()
+            return text or None
+
+        payload = decoded.get("payload")
+        if isinstance(payload, (bytes, bytearray)):
+            try:
+                text = bytes(payload).decode("utf-8").strip()
+            except Exception:
+                return None
+            return text or None
+        return None
+
+    @staticmethod
+    def _is_broadcast_node_num(node_num: int | None) -> bool:
+        if node_num is None:
+            return False
+        return node_num in (-1, 0xFFFFFFFF)
+
+    @classmethod
+    def _is_broadcast_packet_destination(cls, packet: Any) -> bool:
+        to_num = cls._packet_int(packet, "to")
+        if cls._is_broadcast_node_num(to_num):
+            return True
+        if not isinstance(packet, dict):
+            return False
+        to_id = str(packet.get("toId") or "").strip().lower()
+        if to_id in ("^all", "all", "broadcast", "!ffffffff"):
+            return True
+        return False
+
+    @classmethod
+    def _dedupe_key_for_chat_packet(
+        cls,
+        *,
+        packet_id: int | None,
+        from_node_num: int | None,
+        to_node_num: int | None,
+        message_type: str,
+        channel_index: int | None,
+        peer_node_num: int | None,
+        rx_time: float | None,
+        text: str,
+    ) -> str:
+        normalized_to_node = to_node_num
+        if cls._is_broadcast_node_num(normalized_to_node):
+            normalized_to_node = 0xFFFFFFFF
+        if packet_id is not None:
+            scope = f"c{channel_index}" if message_type == "channel" else f"p{peer_node_num}"
+            return f"pkt:{packet_id}:{from_node_num}:{normalized_to_node}:{scope}"
+        rx_stamp = f"{rx_time:.3f}" if isinstance(rx_time, float) else "-"
+        text_hash = hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()[:16]
+        scope = f"c{channel_index}" if message_type == "channel" else f"p{peer_node_num}"
+        return f"rt:{rx_stamp}:{from_node_num}:{normalized_to_node}:{scope}:{text_hash}"
+
+    @staticmethod
+    def _interface_channel_indexes(interface: Any) -> list[int]:
+        channels_obj = getattr(getattr(interface, "localNode", None), "channels", None)
+        if channels_obj is None:
+            return [0]
+        try:
+            channels = list(channels_obj)
+        except TypeError:
+            return [0]
+
+        values: list[int] = []
+        for channel in channels:
+            role_val: Any = None
+            index_val: Any = None
+            if isinstance(channel, dict):
+                role_val = channel.get("role")
+                index_val = channel.get("index")
+            else:
+                role_val = getattr(channel, "role", None)
+                index_val = getattr(channel, "index", None)
+
+            role_text = str(role_val or "").strip().upper()
+            if role_val == 0 or role_text == "DISABLED":
+                continue
+            try:
+                idx = int(index_val)
+            except (TypeError, ValueError):
+                continue
+            if idx < 0:
+                continue
+            values.append(idx)
+
+        if 0 not in values:
+            values.insert(0, 0)
+        return sorted(set(values))
+
+    @staticmethod
+    def _node_log_descriptor_from_record(node_num: int, record: Any) -> str:
+        long_name = ""
+        short_name = ""
+        if isinstance(record, dict):
+            long_name = str(record.get("long_name") or "").strip()
+            short_name = str(record.get("short_name") or "").strip()
+        if not long_name:
+            long_name = "-"
+        if not short_name:
+            short_name = "-"
+        long_name = long_name.replace('"', "'")
+        short_name = short_name.replace('"', "'")
+        return f'node #{node_num} (long="{long_name}", short="{short_name}")'
+
+    @classmethod
+    def _node_log_descriptor(cls, interface: Any, node_num: Any, packet: Any = None) -> str:
+        try:
+            node_num_int = int(node_num)
+        except (TypeError, ValueError):
+            return "node #?"
+
+        packet_record: dict[str, Any] | None = None
+        decoded = cls._packet_decoded(packet)
+        if isinstance(decoded, dict):
+            user = decoded.get("user")
+            if isinstance(user, dict):
+                packet_record = node_record_from_node({"num": node_num_int, "user": user})
+                packet_record["num"] = node_num_int
+
+        if packet_record is not None:
+            return cls._node_log_descriptor_from_record(node_num_int, packet_record)
+
+        try:
+            record = node_record_from_num(interface, node_num_int)
+        except Exception:
+            record = {"num": node_num_int}
+        return cls._node_log_descriptor_from_record(node_num_int, record)
+
     def request_node_telemetry(self, node_num: Any, telemetry_type: Any) -> tuple[bool, str]:
         try:
             node_num_int = int(node_num)
@@ -619,8 +867,9 @@ class MeshTracerController:
             )
         except Exception as exc:
             return False, f"telemetry request failed: {exc}"
+        target_desc = self._node_log_descriptor(interface, node_num_int)
         self._emit(
-            f"[{utc_now()}] Requested {telemetry_label} telemetry from node #{node_num_int}."
+            f"[{utc_now()}] Requested {telemetry_label} telemetry from {target_desc}."
         )
         return True, f"requested {telemetry_label} telemetry from node #{node_num_int}"
 
@@ -662,8 +911,203 @@ class MeshTracerController:
         except Exception as exc:
             return False, f"node info request failed: {exc}"
 
-        self._emit(f"[{utc_now()}] Requested node info from node #{node_num_int}.")
+        target_desc = self._node_log_descriptor(interface, node_num_int)
+        self._emit(f"[{utc_now()}] Requested node info from {target_desc}.")
         return True, f"requested node info from node #{node_num_int}"
+
+    def request_node_position(self, node_num: Any) -> tuple[bool, str]:
+        try:
+            node_num_int = int(node_num)
+        except (TypeError, ValueError):
+            return False, "invalid node_num"
+
+        with self._lock:
+            interface = self._interface
+            worker = self._worker_thread
+            connected = self._connection_state == "connected"
+            if not connected or interface is None or worker is None or not worker.is_alive():
+                return False, "not connected"
+        interface_connected = getattr(interface, "isConnected", None)
+        if interface_connected is not None:
+            is_set = getattr(interface_connected, "is_set", None)
+            if callable(is_set):
+                try:
+                    if not bool(is_set()):
+                        return False, "meshtastic interface is reconnecting"
+                except Exception:
+                    pass
+
+        send_data = getattr(interface, "sendData", None)
+        if not callable(send_data):
+            return False, "position request API unavailable"
+        try:
+            mesh_pb2_mod = importlib.import_module("meshtastic.protobuf.mesh_pb2")
+            portnums_pb2_mod = importlib.import_module("meshtastic.protobuf.portnums_pb2")
+            payload = mesh_pb2_mod.Position()
+            send_data(
+                payload,
+                destinationId=node_num_int,
+                portNum=portnums_pb2_mod.PortNum.POSITION_APP,
+                wantResponse=True,
+            )
+        except Exception as exc:
+            return False, f"position request failed: {exc}"
+
+        target_desc = self._node_log_descriptor(interface, node_num_int)
+        self._emit(f"[{utc_now()}] Requested position from {target_desc}.")
+        return True, f"requested position from node #{node_num_int}"
+
+    def get_chat_messages(
+        self,
+        recipient_kind: Any,
+        recipient_id: Any,
+        limit: Any = 300,
+    ) -> tuple[bool, str, list[dict[str, Any]], int]:
+        kind = str(recipient_kind or "").strip().lower()
+        if kind not in ("channel", "direct"):
+            return False, "invalid recipient_kind", [], 0
+        try:
+            recipient_id_int = int(recipient_id)
+        except (TypeError, ValueError):
+            return False, "invalid recipient_id", [], 0
+        if kind == "channel" and recipient_id_int < 0:
+            return False, "invalid recipient_id", [], 0
+        if kind == "direct" and recipient_id_int <= 0:
+            return False, "invalid recipient_id", [], 0
+
+        mesh_host = self._active_mesh_host()
+        if not mesh_host:
+            return False, "no active mesh partition", [], 0
+
+        try:
+            limit_int = int(limit)
+        except (TypeError, ValueError):
+            limit_int = 300
+        limit_int = max(1, min(2000, limit_int))
+
+        messages = self._store.list_chat_messages(
+            mesh_host,
+            recipient_kind=kind,
+            recipient_id=recipient_id_int,
+            limit=limit_int,
+        )
+        revision = self._store.latest_chat_revision(mesh_host)
+        return True, "ok", messages, revision
+
+    def send_chat_message(
+        self,
+        recipient_kind: Any,
+        recipient_id: Any,
+        text: Any,
+    ) -> tuple[bool, str]:
+        kind = str(recipient_kind or "").strip().lower()
+        if kind not in ("channel", "direct"):
+            return False, "invalid recipient_kind"
+        try:
+            recipient_id_int = int(recipient_id)
+        except (TypeError, ValueError):
+            return False, "invalid recipient_id"
+
+        message_text = str(text or "").strip()
+        if not message_text:
+            return False, "message cannot be empty"
+
+        with self._lock:
+            interface = self._interface
+            worker = self._worker_thread
+            connected = self._connection_state == "connected"
+            map_state = self._map_state
+            if not connected or interface is None or worker is None or not worker.is_alive() or map_state is None:
+                return False, "not connected"
+
+        local_num = self._interface_local_node_num(interface)
+        destination: Any = "^all"
+        channel_index: int | None = None
+        peer_node_num: int | None = None
+        to_node_num: int | None = None
+
+        if kind == "channel":
+            if recipient_id_int < 0:
+                return False, "invalid recipient_id"
+            channel_index = max(0, recipient_id_int)
+            destination = "^all"
+            to_node_num = 0xFFFFFFFF
+        else:
+            if recipient_id_int <= 0:
+                return False, "invalid recipient_id"
+            peer_node_num = recipient_id_int
+            if local_num is not None and peer_node_num == local_num:
+                return False, "cannot send a direct message to the local node"
+            destination = peer_node_num
+            to_node_num = peer_node_num
+
+        send_text = getattr(interface, "sendText", None)
+        if not callable(send_text):
+            return False, "message send API unavailable"
+
+        try:
+            send_result = send_text(
+                message_text,
+                destinationId=destination,
+                channelIndex=channel_index if channel_index is not None else 0,
+            )
+        except Exception as exc:
+            return False, f"message send failed: {exc}"
+
+        packet_id: int | None = None
+        if isinstance(send_result, dict):
+            packet_id = self._packet_int(send_result, "id")
+        elif send_result is not None:
+            try:
+                packet_id = int(send_result)
+            except (TypeError, ValueError):
+                packet_id = None
+
+        dedupe_key = self._dedupe_key_for_chat_packet(
+            packet_id=packet_id,
+            from_node_num=local_num,
+            to_node_num=to_node_num,
+            message_type=kind,
+            channel_index=channel_index,
+            peer_node_num=peer_node_num,
+            rx_time=None,
+            text=message_text,
+        )
+
+        mesh_host = str(map_state.mesh_host or "").strip()
+        if mesh_host:
+            self._store.add_chat_message(
+                mesh_host,
+                text=message_text,
+                message_type=kind,
+                direction="outgoing",
+                channel_index=channel_index,
+                peer_node_num=peer_node_num,
+                from_node_num=local_num,
+                to_node_num=to_node_num,
+                packet_id=packet_id,
+                packet={
+                    "kind": kind,
+                    "destination": destination,
+                    "channel": channel_index,
+                    "id": packet_id,
+                },
+                dedupe_key=dedupe_key,
+            )
+
+        self._bump_snapshot_revision()
+
+        if kind == "channel":
+            self._emit(
+                f"[{utc_now()}] Sent channel message on channel #{int(channel_index or 0)}."
+            )
+            return True, f"sent message to channel #{int(channel_index or 0)}"
+
+        target_desc = self._node_log_descriptor(interface, peer_node_num)
+        self._emit(
+            f"[{utc_now()}] Sent direct message to {target_desc}."
+        )
+        return True, f"sent direct message to node #{peer_node_num}"
 
     def remove_traceroute_queue_entry(self, queue_id: Any) -> tuple[bool, str]:
         try:
@@ -694,6 +1138,29 @@ class MeshTracerController:
         self._emit(f"[{utc_now()}] Removed queued traceroute #{queue_id_int} (node #{node_num}).")
         return True, f"removed queued traceroute #{queue_id_int}"
 
+    def reset_database(self) -> tuple[bool, str]:
+        try:
+            self.disconnect()
+        except Exception as exc:
+            self._emit_error(f"[{utc_now()}] Warning: disconnect during reset encountered an error: {exc}")
+
+        try:
+            self._store.reset_all_data()
+        except Exception as exc:
+            return False, f"failed to reset database: {exc}"
+
+        with self._lock:
+            self._config = deepcopy(DEFAULT_RUNTIME_CONFIG)
+            self._map_state = None
+            self._connection_state = "disconnected"
+            self._connected_host = None
+            self._connection_error = None
+            self._current_traceroute_node_num = None
+
+        self._bump_snapshot_revision()
+        self._emit(f"[{utc_now()}] Database reset: all SQLite data cleared and disconnected.")
+        return True, "database reset and disconnected"
+
     def shutdown(self) -> None:
         try:
             self.disconnect()
@@ -707,6 +1174,7 @@ class MeshTracerController:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             map_state = self._map_state
+            interface = self._interface
             connection_state = self._connection_state
             connected_host = self._connected_host
             connection_error = self._connection_error
@@ -722,6 +1190,20 @@ class MeshTracerController:
             for entry in queue_entries
             if str(entry.get("status") or "").strip().lower() == "queued"
         ]
+        chat_revision = 0
+        chat_channels = [0]
+        chat_recent_direct_node_nums: list[int] = []
+        if mesh_host:
+            chat_revision = self._store.latest_chat_revision(str(mesh_host))
+            for channel_index in self._store.list_chat_channels(str(mesh_host)):
+                if channel_index not in chat_channels:
+                    chat_channels.append(channel_index)
+            if interface is not None:
+                for channel_index in self._interface_channel_indexes(interface):
+                    if channel_index not in chat_channels:
+                        chat_channels.append(channel_index)
+            chat_recent_direct_node_nums = self._store.list_recent_direct_nodes(str(mesh_host), limit=30)
+        chat_channels = sorted(set(int(value) for value in chat_channels if int(value) >= 0))
 
         if map_state is not None:
             payload = map_state.snapshot()
@@ -760,6 +1242,11 @@ class MeshTracerController:
             "running_node_num": running_node_num,
             "queued_node_nums": queued_node_nums,
             "queue_entries": queue_entries,
+        }
+        payload["chat"] = {
+            "revision": int(chat_revision),
+            "channels": chat_channels,
+            "recent_direct_node_nums": chat_recent_direct_node_nums,
         }
         payload["snapshot_revision"] = int(snapshot_revision)
         return payload
@@ -829,9 +1316,9 @@ class MeshTracerController:
         map_state = MapState(
             store=self._store,
             mesh_host=partition_key,
-            max_traces=int(config.get("max_map_traces") or DEFAULT_RUNTIME_CONFIG["max_map_traces"]),
-            max_stored_traces=int(
-                config.get("max_stored_traces") or DEFAULT_RUNTIME_CONFIG["max_stored_traces"]
+            traceroute_retention_hours=int(
+                config.get("traceroute_retention_hours")
+                or DEFAULT_RUNTIME_CONFIG["traceroute_retention_hours"]
             ),
             log_buffer=self._log_buffer,
         )
@@ -962,6 +1449,97 @@ class MeshTracerController:
 
         return True, "disconnected"
 
+    def _capture_chat_from_packet(
+        self,
+        interface: Any,
+        map_state: MapState,
+        packet: Any,
+    ) -> dict[str, Any] | None:
+        if not isinstance(packet, dict):
+            return None
+        if not self._is_text_message_packet(packet):
+            return None
+
+        text = self._packet_text(packet)
+        if not text:
+            return None
+
+        mesh_host = str(map_state.mesh_host or "").strip()
+        if not mesh_host:
+            return None
+
+        from_node_num = self._packet_int(packet, "from")
+        to_node_num = self._packet_int(packet, "to")
+        local_node_num = self._interface_local_node_num(interface)
+        packet_id = self._packet_int(packet, "id")
+        rx_time = self._packet_float(packet, "rxTime", "rx_time", "time")
+
+        is_broadcast = self._is_broadcast_packet_destination(packet)
+        message_type = "channel" if is_broadcast else "direct"
+        channel_index = self._packet_int(packet, "channel")
+        if message_type == "channel":
+            channel_index = 0 if channel_index is None else max(0, int(channel_index))
+            peer_node_num = None
+        else:
+            channel_index = None
+            if local_node_num is not None and from_node_num == local_node_num and to_node_num is not None:
+                peer_node_num = to_node_num
+            elif local_node_num is not None and to_node_num == local_node_num and from_node_num is not None:
+                peer_node_num = from_node_num
+            elif from_node_num is not None:
+                peer_node_num = from_node_num
+            else:
+                peer_node_num = to_node_num
+            if peer_node_num is None:
+                return None
+
+        direction = "unknown"
+        if local_node_num is not None:
+            if from_node_num == local_node_num:
+                direction = "outgoing"
+            else:
+                direction = "incoming"
+        elif from_node_num is not None:
+            direction = "incoming"
+
+        dedupe_key = self._dedupe_key_for_chat_packet(
+            packet_id=packet_id,
+            from_node_num=from_node_num,
+            to_node_num=to_node_num,
+            message_type=message_type,
+            channel_index=channel_index,
+            peer_node_num=peer_node_num,
+            rx_time=rx_time,
+            text=text,
+        )
+        chat_id = self._store.add_chat_message(
+            mesh_host,
+            text=text,
+            message_type=message_type,
+            direction=direction,
+            channel_index=channel_index,
+            peer_node_num=peer_node_num,
+            from_node_num=from_node_num,
+            to_node_num=to_node_num,
+            packet_id=packet_id,
+            rx_time=rx_time,
+            packet=packet,
+            dedupe_key=dedupe_key,
+        )
+        if chat_id is None:
+            return None
+
+        return {
+            "chat_id": int(chat_id),
+            "message_type": message_type,
+            "direction": direction,
+            "channel_index": channel_index,
+            "peer_node_num": peer_node_num,
+            "from_node_num": from_node_num,
+            "to_node_num": to_node_num,
+            "text": text,
+        }
+
     def _setup_pubsub(self, interface: Any, map_state: MapState) -> tuple[Any | None, list[tuple[Any, str]]]:
         pub_bus: Any | None = None
         subscriptions: list[tuple[Any, str]] = []
@@ -986,19 +1564,53 @@ class MeshTracerController:
                 return
             if isinstance(packet, dict):
                 telemetry_types = self._telemetry_packet_types(packet)
+                node_info_packet = self._is_node_info_packet(packet)
+                position_packet = self._is_position_packet(packet)
+                chat_message = self._capture_chat_from_packet(connected_interface, map_state, packet)
                 map_state.update_node_from_num(connected_interface, packet.get("from"))
                 telemetry_updated = map_state.update_telemetry_from_packet(connected_interface, packet)
+                node_info_updated = map_state.update_node_info_from_packet(connected_interface, packet)
+                position_updated = map_state.update_position_from_packet(connected_interface, packet)
+                node_desc = self._node_log_descriptor(
+                    connected_interface,
+                    packet.get("from"),
+                    packet=packet,
+                )
                 if telemetry_types:
-                    node_label = "?"
-                    try:
-                        node_label = str(int(packet.get("from")))
-                    except (TypeError, ValueError):
-                        pass
                     suffix = "" if telemetry_updated else " (no data changes)"
                     self._emit(
                         f"[{utc_now()}] Received {', '.join(telemetry_types)} telemetry "
-                        f"from node #{node_label}{suffix}."
+                        f"from {node_desc}{suffix}."
                     )
+                if node_info_packet:
+                    suffix = "" if node_info_updated else " (no data changes)"
+                    self._emit(
+                        f"[{utc_now()}] Received node info from {node_desc}{suffix}."
+                    )
+                if position_packet:
+                    lat, lon = self._packet_position(packet)
+                    position_text = ""
+                    if lat is not None and lon is not None:
+                        position_text = f" ({lat:.5f}, {lon:.5f})"
+                    suffix = "" if position_updated else " (no data changes)"
+                    self._emit(
+                        f"[{utc_now()}] Received position from {node_desc}"
+                        f"{position_text}{suffix}."
+                    )
+                if isinstance(chat_message, dict):
+                    text = str(chat_message.get("text") or "")
+                    text_preview = text if len(text) <= 90 else f"{text[:87]}..."
+                    if str(chat_message.get("message_type") or "") == "channel":
+                        channel_index = int(chat_message.get("channel_index") or 0)
+                        self._emit(
+                            f"[{utc_now()}] Received channel message on channel #{channel_index} "
+                            f"from {node_desc}: \"{text_preview}\""
+                        )
+                    else:
+                        self._emit(
+                            f"[{utc_now()}] Received direct message from {node_desc}: "
+                            f"\"{text_preview}\""
+                        )
             else:
                 map_state.update_nodes_from_interface(connected_interface)
             self._bump_snapshot_revision()
@@ -1155,7 +1767,10 @@ class MeshTracerController:
                         dest=target_num,
                         hopLimit=hop_limit,
                     )
-                    self._emit(f"[{utc_now()}] Traceroute complete.")
+                    self._emit(
+                        f"[{utc_now()}] Traceroute complete for "
+                        f"{self._node_log_descriptor(interface, target_num)}."
+                    )
 
                     if webhook_url:
                         if traceroute_capture["result"] is None:
@@ -1248,11 +1863,8 @@ def main() -> int:
     if not args.db_path.strip():
         emit_error("--db-path cannot be empty")
         return 2
-    if args.max_map_traces is not None and args.max_map_traces <= 0:
-        emit_error("--max-map-traces must be > 0")
-        return 2
-    if args.max_stored_traces is not None and args.max_stored_traces < 0:
-        emit_error("--max-stored-traces must be >= 0")
+    if args.traceroute_retention_hours is not None and args.traceroute_retention_hours <= 0:
+        emit_error("--traceroute-retention-hours must be > 0")
         return 2
     if not args.web_ui and not args.host:
         emit_error("Missing required host. Usage: python meshtracer.py <NODE_IP> --no-web")
@@ -1284,8 +1896,12 @@ def main() -> int:
                     controller.connect,
                     controller.disconnect,
                     controller.run_traceroute,
+                    controller.send_chat_message,
+                    controller.get_chat_messages,
                     controller.request_node_telemetry,
                     controller.request_node_info,
+                    controller.request_node_position,
+                    controller.reset_database,
                     controller.remove_traceroute_queue_entry,
                     controller.rescan_discovery,
                     controller.get_public_config,

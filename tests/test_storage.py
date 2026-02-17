@@ -27,6 +27,11 @@ def _result(node_num: int) -> dict:
     }
 
 
+class _UnserializableValue:
+    def __str__(self) -> str:
+        return "unserializable-value"
+
+
 class SQLiteStoreTests(unittest.TestCase):
     def test_runtime_config_persists_across_store_instances(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -40,8 +45,7 @@ class SQLiteStoreTests(unittest.TestCase):
                         "hop_limit": 3,
                         "webhook_url": "https://example.com/hook",
                         "webhook_api_token": "secret",
-                        "max_map_traces": 12,
-                        "max_stored_traces": 1234,
+                        "traceroute_retention_hours": 12,
                     }
                 )
             finally:
@@ -56,23 +60,28 @@ class SQLiteStoreTests(unittest.TestCase):
                 self.assertEqual(loaded.get("hop_limit"), 3)
                 self.assertEqual(loaded.get("webhook_url"), "https://example.com/hook")
                 self.assertEqual(loaded.get("webhook_api_token"), "secret")
-                self.assertEqual(loaded.get("max_map_traces"), 12)
-                self.assertEqual(loaded.get("max_stored_traces"), 1234)
+                self.assertEqual(loaded.get("traceroute_retention_hours"), 12)
             finally:
                 store2.close()
 
-    def test_add_traceroute_prunes_to_max_keep(self) -> None:
+    def test_prune_traceroutes_older_than_deletes_expired_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"
             store = SQLiteStore(str(db_path))
             try:
-                for i in range(1, 6):
-                    store.add_traceroute("node:1", _result(i), max_keep=2)
+                older = _result(1)
+                older["captured_at_utc"] = "2025-01-01 00:00:00 UTC"
+                newer = _result(2)
+                newer["captured_at_utc"] = "2099-12-01 00:00:00 UTC"
+                store.add_traceroute("node:1", older)
+                store.add_traceroute("node:1", newer)
+                deleted = store.prune_traceroutes_older_than("node:1", 24)
 
                 _nodes, traces = store.snapshot("node:1", max_traces=100)
 
-                self.assertEqual(len(traces), 2)
-                self.assertEqual([t["trace_id"] for t in traces], sorted([t["trace_id"] for t in traces]))
+                self.assertEqual(deleted, 1)
+                self.assertEqual(len(traces), 1)
+                self.assertEqual(traces[0].get("packet", {}).get("from", {}).get("num"), 2)
             finally:
                 store.close()
 
@@ -185,8 +194,8 @@ class SQLiteStoreTests(unittest.TestCase):
             db_path = Path(tmp_dir) / "test.db"
             store = SQLiteStore(str(db_path))
             try:
-                store.add_traceroute("node:A", _result(10), max_keep=None)
-                store.add_traceroute("node:B", _result(20), max_keep=None)
+                store.add_traceroute("node:A", _result(10))
+                store.add_traceroute("node:B", _result(20))
 
                 _nodes_a, traces_a = store.snapshot("node:A", max_traces=10)
                 _nodes_b, traces_b = store.snapshot("node:B", max_traces=10)
@@ -194,6 +203,20 @@ class SQLiteStoreTests(unittest.TestCase):
                 self.assertEqual(len(traces_a), 1)
                 self.assertEqual(len(traces_b), 1)
                 self.assertNotEqual(traces_a[0]["trace_id"], traces_b[0]["trace_id"])
+            finally:
+                store.close()
+
+    def test_snapshot_without_limit_returns_all_traces(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                store.add_traceroute("node:all", _result(10))
+                store.add_traceroute("node:all", _result(11))
+                store.add_traceroute("node:all", _result(12))
+
+                _nodes, traces = store.snapshot("node:all")
+                self.assertEqual(len(traces), 3)
             finally:
                 store.close()
 
@@ -257,6 +280,84 @@ class SQLiteStoreTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_node_position_persists_and_is_exposed_in_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                store.upsert_node(
+                    "node:position",
+                    {
+                        "num": 987,
+                        "id": "!position",
+                        "long_name": "Position Node",
+                        "short_name": "POS",
+                        "lat": 52.67784,
+                        "lon": -2.5559,
+                    },
+                )
+                self.assertTrue(
+                    store.upsert_node_position(
+                        "node:position",
+                        987,
+                        {"latitudeI": 526778400, "longitudeI": -25559000},
+                    )
+                )
+                self.assertTrue(
+                    store.upsert_node_position(
+                        "node:position",
+                        987,
+                        {"altitude": 165, "satsInView": 7},
+                    )
+                )
+
+                position = store.get_node_position("node:position", 987)
+                self.assertIsNotNone(position)
+                self.assertEqual((position or {}).get("position", {}).get("latitudeI"), 526778400)
+                self.assertEqual((position or {}).get("position", {}).get("longitudeI"), -25559000)
+                self.assertEqual((position or {}).get("position", {}).get("altitude"), 165)
+                self.assertEqual((position or {}).get("position", {}).get("satsInView"), 7)
+                self.assertTrue(bool((position or {}).get("updated_at_utc")))
+
+                nodes, _traces = store.snapshot("node:position", max_traces=10)
+                self.assertEqual(len(nodes), 1)
+                node = nodes[0]
+                self.assertEqual(node.get("position", {}).get("latitudeI"), 526778400)
+                self.assertEqual(node.get("position", {}).get("longitudeI"), -25559000)
+                self.assertEqual(node.get("position", {}).get("altitude"), 165)
+                self.assertEqual(node.get("position", {}).get("satsInView"), 7)
+                self.assertTrue(bool(node.get("position_updated_at_utc")))
+            finally:
+                store.close()
+
+    def test_upsert_node_position_coerces_non_json_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                self.assertTrue(
+                    store.upsert_node_position(
+                        "node:position-safe",
+                        999,
+                        {
+                            "latitudeI": 515001234,
+                            "longitudeI": -1234567,
+                            "rawProto": _UnserializableValue(),
+                            "nested": {"value": _UnserializableValue()},
+                        },
+                    )
+                )
+
+                position = store.get_node_position("node:position-safe", 999)
+                self.assertIsNotNone(position)
+                saved = (position or {}).get("position", {})
+                self.assertEqual(saved.get("latitudeI"), 515001234)
+                self.assertEqual(saved.get("longitudeI"), -1234567)
+                self.assertEqual(saved.get("rawProto"), "unserializable-value")
+                self.assertEqual((saved.get("nested") or {}).get("value"), "unserializable-value")
+            finally:
+                store.close()
+
     def test_traceroute_queue_flow_and_requeue(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"
@@ -308,6 +409,147 @@ class SQLiteStoreTests(unittest.TestCase):
                 self.assertEqual(entries[0].get("status"), "queued")
             finally:
                 reopened.close()
+
+    def test_chat_messages_store_and_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                channel_chat_id = store.add_chat_message(
+                    "node:chat",
+                    text="hello channel",
+                    message_type="channel",
+                    direction="incoming",
+                    channel_index=2,
+                    from_node_num=42,
+                    to_node_num=0xFFFFFFFF,
+                    packet_id=1001,
+                    dedupe_key="pkt:1001",
+                    packet={"id": 1001},
+                )
+                self.assertIsNotNone(channel_chat_id)
+                duplicate_chat_id = store.add_chat_message(
+                    "node:chat",
+                    text="hello channel",
+                    message_type="channel",
+                    direction="incoming",
+                    channel_index=2,
+                    from_node_num=42,
+                    to_node_num=0xFFFFFFFF,
+                    packet_id=1001,
+                    dedupe_key="pkt:1001",
+                    packet={"id": 1001},
+                )
+                self.assertEqual(duplicate_chat_id, channel_chat_id)
+
+                direct_1 = store.add_chat_message(
+                    "node:chat",
+                    text="hello node 99",
+                    message_type="direct",
+                    direction="outgoing",
+                    peer_node_num=99,
+                    from_node_num=10,
+                    to_node_num=99,
+                    packet_id=1002,
+                    dedupe_key="pkt:1002",
+                    packet={"id": 1002},
+                )
+                direct_2 = store.add_chat_message(
+                    "node:chat",
+                    text="reply from node 88",
+                    message_type="direct",
+                    direction="incoming",
+                    peer_node_num=88,
+                    from_node_num=88,
+                    to_node_num=10,
+                    packet_id=1003,
+                    dedupe_key="pkt:1003",
+                    packet={"id": 1003},
+                )
+                self.assertIsNotNone(direct_1)
+                self.assertIsNotNone(direct_2)
+
+                self.assertEqual(store.latest_chat_revision("node:chat"), int(direct_2 or 0))
+                self.assertEqual(store.list_chat_channels("node:chat"), [2])
+                self.assertEqual(store.list_recent_direct_nodes("node:chat"), [88, 99])
+
+                channel_messages = store.list_chat_messages(
+                    "node:chat",
+                    recipient_kind="channel",
+                    recipient_id=2,
+                    limit=20,
+                )
+                self.assertEqual(len(channel_messages), 1)
+                self.assertEqual(channel_messages[0].get("text"), "hello channel")
+                self.assertEqual(channel_messages[0].get("channel_index"), 2)
+
+                direct_messages = store.list_chat_messages(
+                    "node:chat",
+                    recipient_kind="direct",
+                    recipient_id=99,
+                    limit=20,
+                )
+                self.assertEqual(len(direct_messages), 1)
+                self.assertEqual(direct_messages[0].get("text"), "hello node 99")
+                self.assertEqual(direct_messages[0].get("peer_node_num"), 99)
+            finally:
+                store.close()
+
+    def test_reset_all_data_clears_everything(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                store.set_runtime_config(
+                    {
+                        "interval": 5,
+                        "heard_window": 120,
+                        "hop_limit": 7,
+                    }
+                )
+                store.upsert_node(
+                    "node:reset",
+                    {
+                        "num": 99,
+                        "id": "!reset",
+                        "long_name": "Reset Node",
+                        "short_name": "RST",
+                        "lat": 1.23,
+                        "lon": 4.56,
+                    },
+                )
+                store.upsert_node_telemetry("node:reset", 99, "device", {"batteryLevel": 88})
+                store.upsert_node_position("node:reset", 99, {"latitudeI": 123000000, "longitudeI": 456000000})
+                store.add_traceroute("node:reset", _result(99))
+                store.enqueue_traceroute_target("node:reset", 99)
+                store.add_chat_message(
+                    "node:reset",
+                    text="chat before reset",
+                    message_type="channel",
+                    direction="incoming",
+                    channel_index=0,
+                    dedupe_key="chat:1",
+                )
+
+                store.reset_all_data()
+
+                self.assertIsNone(store.get_runtime_config())
+                nodes, traces = store.snapshot("node:reset", max_traces=10)
+                self.assertEqual(nodes, [])
+                self.assertEqual(traces, [])
+                self.assertEqual(store.list_traceroute_queue("node:reset"), [])
+                self.assertIsNone(store.get_node_telemetry("node:reset", 99, "device"))
+                self.assertIsNone(store.get_node_position("node:reset", 99))
+                self.assertEqual(
+                    store.list_chat_messages(
+                        "node:reset",
+                        recipient_kind="channel",
+                        recipient_id=0,
+                    ),
+                    [],
+                )
+            finally:
+                store.close()
 
 
 if __name__ == "__main__":

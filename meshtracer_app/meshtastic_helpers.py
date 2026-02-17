@@ -80,6 +80,9 @@ def node_record_from_num(interface: Any, node_num: int) -> dict[str, Any]:
 
 def extract_node_position(node: dict[str, Any]) -> tuple[float | None, float | None]:
     position = node.get("position", {}) or {}
+    if not isinstance(position, dict):
+        return None, None
+
     lat = position.get("latitude")
     lon = position.get("longitude")
 
@@ -87,6 +90,10 @@ def extract_node_position(node: dict[str, Any]) -> tuple[float | None, float | N
         lat = float(position.get("latitudeI")) / 1e7
     if lon is None and position.get("longitudeI") is not None:
         lon = float(position.get("longitudeI")) / 1e7
+    if lat is None and position.get("latitude_i") is not None:
+        lat = float(position.get("latitude_i")) / 1e7
+    if lon is None and position.get("longitude_i") is not None:
+        lon = float(position.get("longitude_i")) / 1e7
 
     try:
         lat_f = float(lat) if lat is not None else None

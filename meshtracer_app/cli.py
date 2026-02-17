@@ -82,15 +82,12 @@ def parse_args() -> argparse.Namespace:
         help="SQLite database file path for node/traceroute history (default: meshtracer.db)",
     )
     parser.add_argument(
-        "--max-map-traces",
+        "--traceroute-retention-hours",
         type=int,
         default=None,
-        help="Max completed traces exposed by /api/map (default: 800)",
-    )
-    parser.add_argument(
-        "--max-stored-traces",
-        type=int,
-        default=None,
-        help="Max completed traces kept per connected node in SQLite (default: 50000, 0 disables pruning)",
+        help=(
+            "Delete completed traceroutes older than this many hours "
+            "(default: 720 = 30 days)"
+        ),
     )
     return parser.parse_args()

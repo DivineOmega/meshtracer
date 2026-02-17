@@ -690,6 +690,15 @@ MAP_HTML = """<!doctype html>
     .cfg-btn.secondary:hover {
       background: rgba(20, 35, 69, 0.98);
     }
+    .cfg-btn.danger {
+      background: #5a1322;
+      border-color: #8b2035;
+      color: #ffd9df;
+    }
+    .cfg-btn.danger:hover {
+      background: #6f1a2b;
+      border-color: #a52a41;
+    }
     .cfg-status {
       margin-top: 10px;
       border: 1px solid rgba(148, 163, 184, 0.28);
@@ -1190,7 +1199,7 @@ MAP_HTML = """<!doctype html>
       top: 12px;
       left: 12px;
       z-index: 1090;
-      width: min(430px, calc(100vw - 84px));
+      width: min(450px, calc(100vw - 84px));
       max-height: 46vh;
       overflow: auto;
       box-sizing: border-box;
@@ -1203,6 +1212,196 @@ MAP_HTML = """<!doctype html>
     }
     #traceDetails.hidden {
       display: none;
+    }
+    #chatModal {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 1085;
+      width: min(450px, calc(100vw - 84px));
+      max-height: 42vh;
+      overflow: hidden;
+      box-sizing: border-box;
+      border: 1px solid #35507d;
+      border-radius: 12px;
+      background: rgba(12, 20, 40, 0.92);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(2px);
+      display: flex;
+      flex-direction: column;
+    }
+    #chatModal.hidden {
+      display: none;
+    }
+    .chat-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px 8px 12px;
+      border-bottom: 1px solid #2a3f64;
+      flex: 0 0 auto;
+    }
+    .chat-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #e9f1ff;
+      letter-spacing: 0.02em;
+      min-width: 0;
+    }
+    #chatClose {
+      width: 24px;
+      height: 24px;
+      border: 1px solid #456196;
+      border-radius: 7px;
+      background: #13264b;
+      color: #d9e6ff;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    #chatClose:hover {
+      background: #1b3362;
+    }
+    .chat-body {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex: 1;
+      padding: 8px 10px 10px 10px;
+      gap: 8px;
+    }
+    .chat-recipient {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex: 0 0 auto;
+    }
+    .chat-recipient-label {
+      color: #9ab0d8;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    #chatRecipient {
+      border: 1px solid #2d4065;
+      border-radius: 8px;
+      background: #122145;
+      color: #d9e4fb;
+      padding: 7px 9px;
+      font-size: 12px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    #chatMessages {
+      border: 1px solid #2a3f64;
+      border-radius: 9px;
+      background: #0d1730;
+      padding: 8px;
+      flex: 1;
+      min-height: 120px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .chat-empty {
+      color: #b5c5e4;
+      font-size: 12px;
+      line-height: 1.35;
+      text-align: center;
+      margin-top: 12px;
+    }
+    .chat-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 92%;
+      gap: 3px;
+    }
+    .chat-row.incoming {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+    .chat-row.outgoing {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+    .chat-bubble {
+      border-radius: 14px;
+      padding: 7px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      box-sizing: border-box;
+      border: 1px solid transparent;
+    }
+    .chat-row.incoming .chat-bubble {
+      background: rgba(18, 33, 69, 0.9);
+      border-color: #2f4a79;
+      color: #d9e4fb;
+      border-bottom-left-radius: 6px;
+    }
+    .chat-row.outgoing .chat-bubble {
+      background: rgba(41, 80, 145, 0.82);
+      border-color: #4770b4;
+      color: #eef5ff;
+      border-bottom-right-radius: 6px;
+    }
+    .chat-meta {
+      color: #9ab0d8;
+      font-size: 10px;
+      line-height: 1.25;
+      white-space: nowrap;
+      opacity: 0.9;
+    }
+    .chat-status {
+      color: #b5c5e4;
+      font-size: 11px;
+      line-height: 1.3;
+      min-height: 1.2em;
+      overflow-wrap: anywhere;
+      flex: 0 0 auto;
+    }
+    .chat-status.error {
+      color: #ffd0dc;
+    }
+    .chat-compose {
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+      flex: 0 0 auto;
+    }
+    #chatInput {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid #2d4065;
+      border-radius: 8px;
+      background: #122145;
+      color: #d9e4fb;
+      padding: 7px 9px;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+    #chatSend {
+      border: 1px solid #2d4065;
+      border-radius: 8px;
+      background: #1b3362;
+      color: #d9e4fb;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 7px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    #chatSend:hover {
+      background: #244074;
+    }
+    #chatSend:disabled {
+      opacity: 0.62;
+      cursor: not-allowed;
     }
     .trace-head {
       display: flex;
@@ -1333,6 +1532,32 @@ MAP_HTML = """<!doctype html>
       background: linear-gradient(180deg, #28467f 0%, #1b3360 100%);
       color: #f2f7ff;
       box-shadow: inset 0 0 0 1px rgba(173, 204, 255, 0.35);
+    }
+    .node-summary-panel {
+      margin-top: 8px;
+      border: 1px solid #2a3f64;
+      border-radius: 9px;
+      background: #0d1730;
+      padding: 8px;
+    }
+    .node-info-grid {
+      display: grid;
+      grid-template-columns: minmax(100px, 1fr) minmax(0, 1.4fr);
+      gap: 6px 10px;
+    }
+    .node-info-key {
+      color: #9ab0d8;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      overflow-wrap: anywhere;
+    }
+    .node-info-value {
+      color: #d9e4fb;
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      text-align: right;
     }
     .node-tab-panel {
       margin-top: 6px;
@@ -1469,6 +1694,24 @@ MAP_HTML = """<!doctype html>
     </div>
     <div id="traceDetailsBody"></div>
   </section>
+  <section id="chatModal" class="hidden" aria-live="polite">
+    <div class="chat-head">
+      <div class="chat-title">Chat</div>
+      <button id="chatClose" type="button" aria-label="Close chat">X</button>
+    </div>
+    <div class="chat-body">
+      <div class="chat-recipient">
+        <label class="chat-recipient-label" for="chatRecipient">Recipient</label>
+        <select id="chatRecipient"></select>
+      </div>
+      <div id="chatMessages"></div>
+      <div id="chatStatus" class="chat-status"></div>
+      <div class="chat-compose">
+        <input id="chatInput" type="text" autocomplete="off" spellcheck="false" placeholder="Type a message...">
+        <button id="chatSend" type="button">Send</button>
+      </div>
+    </div>
+  </section>
 
   <aside id="sidebar">
     <div id="sidebarResize" aria-hidden="true"></div>
@@ -1479,6 +1722,14 @@ MAP_HTML = """<!doctype html>
           <div class="head-title">Meshtracer</div>
           <div class="head-actions">
             <div id="updated" class="head-updated">-</div>
+            <button id="chatOpen" class="icon-btn" type="button" aria-label="Open chat">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M16 11c1.7 0 3-1.6 3-3.5S17.7 4 16 4s-3 1.6-3 3.5 1.3 3.5 3 3.5z"></path>
+                <path d="M8 12c2.2 0 4-2 4-4.5S10.2 3 8 3 4 5 4 7.5 5.8 12 8 12z"></path>
+                <path d="M2 21v-1c0-2.8 2.2-5 5-5h2"></path>
+                <path d="M12 21v-1c0-2.2 1.8-4 4-4h1c2.2 0 4 1.8 4 4v1"></path>
+              </svg>
+            </button>
             <button id="configOpen" class="icon-btn" type="button" aria-label="Open config">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="3"></circle>
@@ -1613,17 +1864,18 @@ MAP_HTML = """<!doctype html>
           <div class="cfg-grid">
             <div class="cfg-field">
               <div class="cfg-label-row">
-                <label class="cfg-label" for="cfgMaxMapTraces">Max Map Traces</label>
-                <button type="button" class="cfg-help" data-help="max_map_traces" aria-label="Help for max map traces">?</button>
+                <label class="cfg-label" for="cfgTracerouteRetentionHours">Delete traceroutes older than</label>
+                <button type="button" class="cfg-help" data-help="traceroute_retention_hours" aria-label="Help for traceroute retention">?</button>
               </div>
-              <input id="cfgMaxMapTraces" class="cfg-input" type="number" min="1" step="1">
-            </div>
-            <div class="cfg-field">
-              <div class="cfg-label-row">
-                <label class="cfg-label" for="cfgMaxStoredTraces">Max Stored Traces (0 disables pruning)</label>
-                <button type="button" class="cfg-help" data-help="max_stored_traces" aria-label="Help for max stored traces">?</button>
-              </div>
-              <input id="cfgMaxStoredTraces" class="cfg-input" type="number" min="0" step="1">
+              <select id="cfgTracerouteRetentionHours" class="cfg-input">
+                <option value="1">1 hour</option>
+                <option value="6">6 hours</option>
+                <option value="12">12 hours</option>
+                <option value="24">24 hours</option>
+                <option value="168">7 days</option>
+                <option value="336">14 days</option>
+                <option value="720" selected>30 days</option>
+              </select>
             </div>
           </div>
         </div>
@@ -1650,6 +1902,7 @@ MAP_HTML = """<!doctype html>
         <div class="cfg-actions">
           <button id="cfgApply" class="cfg-btn" type="button">Apply</button>
           <button id="cfgReset" class="cfg-btn secondary" type="button">Reset</button>
+          <button id="cfgResetDatabase" class="cfg-btn danger" type="button">Reset Database</button>
         </div>
         <div id="cfgStatus" class="cfg-status"></div>
         <div class="cfg-readonly">
@@ -1697,6 +1950,7 @@ MAP_HTML = """<!doctype html>
     }).addTo(map);
     const markerLayer = L.layerGroup().addTo(map);
     const edgeLayer = L.layerGroup().addTo(map);
+    const spiderLayer = L.layerGroup().addTo(map);
 
     const sidebar = document.getElementById("sidebar");
     const sidebarResize = document.getElementById("sidebarResize");
@@ -1705,6 +1959,14 @@ MAP_HTML = """<!doctype html>
     const traceDetailsTitle = document.getElementById("traceDetailsTitle");
     const traceDetailsBody = document.getElementById("traceDetailsBody");
     const traceDetailsClose = document.getElementById("traceDetailsClose");
+    const chatModal = document.getElementById("chatModal");
+    const chatOpen = document.getElementById("chatOpen");
+    const chatClose = document.getElementById("chatClose");
+    const chatRecipient = document.getElementById("chatRecipient");
+    const chatMessages = document.getElementById("chatMessages");
+    const chatStatus = document.getElementById("chatStatus");
+    const chatInput = document.getElementById("chatInput");
+    const chatSend = document.getElementById("chatSend");
     const manageTraceQueueBtn = document.getElementById("manageTraceQueueBtn");
     const nodeSearchInput = document.getElementById("nodeSearch");
     const nodeSortSelect = document.getElementById("nodeSort");
@@ -1729,12 +1991,12 @@ MAP_HTML = """<!doctype html>
     const cfgFreshWindow = document.getElementById("cfgFreshWindow");
     const cfgMidWindow = document.getElementById("cfgMidWindow");
     const cfgHopLimit = document.getElementById("cfgHopLimit");
-    const cfgMaxMapTraces = document.getElementById("cfgMaxMapTraces");
-    const cfgMaxStoredTraces = document.getElementById("cfgMaxStoredTraces");
+    const cfgTracerouteRetentionHours = document.getElementById("cfgTracerouteRetentionHours");
     const cfgWebhookUrl = document.getElementById("cfgWebhookUrl");
     const cfgWebhookToken = document.getElementById("cfgWebhookToken");
     const cfgApply = document.getElementById("cfgApply");
     const cfgReset = document.getElementById("cfgReset");
+    const cfgResetDatabase = document.getElementById("cfgResetDatabase");
     const cfgStatus = document.getElementById("cfgStatus");
     const cfgDbPath = document.getElementById("cfgDbPath");
     const cfgUiBind = document.getElementById("cfgUiBind");
@@ -1775,6 +2037,8 @@ MAP_HTML = """<!doctype html>
       selectedTraceId: null,
       selectedNodeDetailsTab: "node_info",
       lastDrawSelectedTraceId: null,
+      spiderGroups: new Map(),
+      activeSpiderGroupKey: null,
       activeTab: "log",
       nodeSearchQuery: "",
       nodeSortMode: "last_heard",
@@ -1786,6 +2050,16 @@ MAP_HTML = """<!doctype html>
       configTokenTouched: false,
       queueRemoveBusyIds: new Set(),
       telemetryRequestState: {},
+      chatOpen: false,
+      chatRecipientKind: "channel",
+      chatRecipientId: 0,
+      chatMessages: [],
+      chatLoading: false,
+      chatSendBusy: false,
+      chatLoadedKey: "",
+      lastChatRevision: 0,
+      chatStatusMessage: "",
+      chatStatusError: false,
     };
     const FALLBACK_POLL_MS_CONNECTED = 30000;
     const FALLBACK_POLL_MS_DISCONNECTED = 3000;
@@ -1830,6 +2104,9 @@ MAP_HTML = """<!doctype html>
     const ROUTE_OFFSET_TAPER_RATIO = 0.22;
     const NODE_FOCUS_MIN_ZOOM = 16;
     const TRACE_FOCUS_MAX_ZOOM = 16;
+    const SPIDERFY_RADIUS_MIN_PX = 20;
+    const SPIDERFY_RADIUS_STEP_PX = 2.6;
+    const SPIDERFY_RADIUS_MAX_PX = 46;
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"]/g, (c) => {
@@ -1838,6 +2115,349 @@ MAP_HTML = """<!doctype html>
         if (c === ">") return "&gt;";
         return "&quot;";
       });
+    }
+
+    function chatRevisionFromData(data) {
+      return numericRevision(data && data.chat && data.chat.revision, 0);
+    }
+
+    function chatChannelsFromData(data) {
+      const channelsRaw = Array.isArray(data && data.chat && data.chat.channels)
+        ? data.chat.channels
+        : [];
+      const channels = [];
+      for (const raw of channelsRaw) {
+        const value = Number(raw);
+        if (!Number.isFinite(value)) continue;
+        const idx = Math.trunc(value);
+        if (idx < 0) continue;
+        if (!channels.includes(idx)) channels.push(idx);
+      }
+      if (!channels.length) channels.push(0);
+      channels.sort((a, b) => a - b);
+      return channels;
+    }
+
+    function chatRecentDirectNodesFromData(data) {
+      const recentRaw = Array.isArray(data && data.chat && data.chat.recent_direct_node_nums)
+        ? data.chat.recent_direct_node_nums
+        : [];
+      const recent = [];
+      for (const raw of recentRaw) {
+        const value = Number(raw);
+        if (!Number.isFinite(value)) continue;
+        const nodeNum = Math.trunc(value);
+        if (recent.includes(nodeNum)) continue;
+        recent.push(nodeNum);
+      }
+      return recent;
+    }
+
+    function chatRecipientKey(kind, id) {
+      return `${String(kind || "").trim().toLowerCase()}:${Math.trunc(Number(id) || 0)}`;
+    }
+
+    function allKnownNodeNums(data) {
+      const nodes = Array.isArray(data && data.nodes) ? data.nodes : [];
+      const nums = [];
+      for (const node of nodes) {
+        const value = Number(node && node.num);
+        if (!Number.isFinite(value)) continue;
+        const nodeNum = Math.trunc(value);
+        if (!nums.includes(nodeNum)) nums.push(nodeNum);
+      }
+      return nums;
+    }
+
+    function normalizeChatRecipient(data, options = {}) {
+      const channels = chatChannelsFromData(data);
+      const recentDirect = chatRecentDirectNodesFromData(data);
+      const nodeNums = allKnownNodeNums(data);
+
+      const preferNodeNumValue = Number(options.nodeNum);
+      if (Number.isFinite(preferNodeNumValue)) {
+        state.chatRecipientKind = "direct";
+        state.chatRecipientId = Math.trunc(preferNodeNumValue);
+      }
+
+      const currentKind = String(state.chatRecipientKind || "").trim().toLowerCase();
+      const currentId = Math.trunc(Number(state.chatRecipientId) || 0);
+      let nextKind = currentKind;
+      let nextId = currentId;
+
+      if (currentKind === "channel") {
+        if (!channels.includes(currentId)) {
+          nextId = channels[0];
+        }
+      } else if (currentKind === "direct") {
+        const validDirect = recentDirect.includes(currentId) || nodeNums.includes(currentId);
+        if (!validDirect) {
+          nextKind = "channel";
+          nextId = channels[0];
+        }
+      } else {
+        nextKind = "channel";
+        nextId = channels[0];
+      }
+
+      state.chatRecipientKind = nextKind;
+      state.chatRecipientId = nextId;
+
+      const recentSet = new Set(recentDirect);
+      const otherDirect = nodeNums.filter((nodeNum) => !recentSet.has(nodeNum));
+
+      if (state.chatRecipientKind === "direct" && !recentSet.has(state.chatRecipientId) && !otherDirect.includes(state.chatRecipientId)) {
+        recentDirect.unshift(state.chatRecipientId);
+      }
+
+      return { channels, recentDirect, otherDirect };
+    }
+
+    function chatNodeLabel(nodeNum) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      const fallback = `Node #${nodeNumInt}`;
+      if (!Number.isFinite(nodeNumInt)) return "Node";
+      const node = state.nodeByNum.get(nodeNumInt);
+      if (!node) return fallback;
+      const short = nodeLabel(node);
+      const longName = node.long_name && String(node.long_name).trim()
+        ? String(node.long_name).trim()
+        : "";
+      if (!longName || longName.toLowerCase() === short.toLowerCase()) {
+        return `${short} (#${nodeNumInt})`;
+      }
+      return `${short} / ${longName} (#${nodeNumInt})`;
+    }
+
+    function chatMetaText(message) {
+      const created = String(message && message.created_at_utc ? message.created_at_utc : "").trim();
+      if (!created) return "-";
+      return created;
+    }
+
+    function setChatStatus(message, options = {}) {
+      state.chatStatusMessage = String(message || "").trim();
+      state.chatStatusError = Boolean(options.error);
+      if (!chatStatus) return;
+      chatStatus.textContent = state.chatStatusMessage;
+      chatStatus.classList.toggle("error", state.chatStatusError);
+    }
+
+    function positionChatModal() {
+      if (!chatModal || chatModal.classList.contains("hidden")) return;
+      let top = 12;
+      if (traceDetails && !traceDetails.classList.contains("hidden")) {
+        const detailsRect = traceDetails.getBoundingClientRect();
+        if (Number.isFinite(detailsRect.bottom) && detailsRect.bottom > 0) {
+          top = Math.max(top, Math.round(detailsRect.bottom + 10));
+        }
+      }
+      const maxTop = Math.max(12, window.innerHeight - 200);
+      top = Math.min(top, maxTop);
+      chatModal.style.top = `${top}px`;
+      const maxHeight = Math.max(180, window.innerHeight - top - 12);
+      chatModal.style.maxHeight = `${maxHeight}px`;
+    }
+
+    function renderChatPanel(data = state.lastServerData) {
+      if (!chatModal || !chatRecipient || !chatMessages || !chatInput || !chatSend) return;
+      if (!state.chatOpen) {
+        chatModal.classList.add("hidden");
+        return;
+      }
+      chatModal.classList.remove("hidden");
+      positionChatModal();
+
+      const recipients = normalizeChatRecipient(data);
+      const selectedKey = chatRecipientKey(state.chatRecipientKind, state.chatRecipientId);
+
+      const channelsOptionsHtml = recipients.channels.map((channelIndex) => {
+        const value = chatRecipientKey("channel", channelIndex);
+        const selectedAttr = selectedKey === value ? "selected" : "";
+        return `<option value="${escapeHtml(value)}" ${selectedAttr}>Channel ${escapeHtml(channelIndex)}</option>`;
+      }).join("");
+
+      const recentOptionsHtml = recipients.recentDirect.map((nodeNum) => {
+        const value = chatRecipientKey("direct", nodeNum);
+        const selectedAttr = selectedKey === value ? "selected" : "";
+        return `<option value="${escapeHtml(value)}" ${selectedAttr}>${escapeHtml(chatNodeLabel(nodeNum))}</option>`;
+      }).join("");
+
+      const otherOptionsHtml = recipients.otherDirect.map((nodeNum) => {
+        const value = chatRecipientKey("direct", nodeNum);
+        const selectedAttr = selectedKey === value ? "selected" : "";
+        return `<option value="${escapeHtml(value)}" ${selectedAttr}>${escapeHtml(chatNodeLabel(nodeNum))}</option>`;
+      }).join("");
+
+      chatRecipient.innerHTML = `
+        <optgroup label="Channels">
+          ${channelsOptionsHtml}
+        </optgroup>
+        <optgroup label="Recently Messaged Nodes">
+          ${recentOptionsHtml || `<option disabled>(none)</option>`}
+        </optgroup>
+        <optgroup label="Other Nodes">
+          ${otherOptionsHtml || `<option disabled>(none)</option>`}
+        </optgroup>
+      `;
+      chatRecipient.value = selectedKey;
+
+      const messages = Array.isArray(state.chatMessages) ? state.chatMessages : [];
+      if (!messages.length) {
+        chatMessages.innerHTML = '<div class="chat-empty">No messages yet for this recipient.</div>';
+      } else {
+        chatMessages.innerHTML = messages.map((message) => {
+          const direction = String(message && message.direction || "").trim().toLowerCase() === "outgoing"
+            ? "outgoing"
+            : "incoming";
+          const text = String(message && message.text || "");
+          const fromNodeNum = Number(message && message.from_node_num);
+          const sender = direction === "outgoing"
+            ? "You"
+            : Number.isFinite(fromNodeNum)
+              ? chatNodeLabel(Math.trunc(fromNodeNum))
+              : "Node";
+          const metaText = `${sender} | ${chatMetaText(message)}`;
+          return `
+            <div class="chat-row ${direction}">
+              <div class="chat-bubble">${escapeHtml(text)}</div>
+              <div class="chat-meta">${escapeHtml(metaText)}</div>
+            </div>
+          `;
+        }).join("");
+      }
+
+      const connected = Boolean(data && data.connected);
+      chatSend.disabled = state.chatSendBusy || !connected;
+      chatInput.disabled = state.chatSendBusy || !connected;
+      if (!connected && !state.chatStatusMessage) {
+        setChatStatus("Connect to a node to send messages.", { error: false });
+      }
+      if (chatStatus) {
+        chatStatus.textContent = state.chatStatusMessage;
+        chatStatus.classList.toggle("error", state.chatStatusError);
+      }
+
+      if (state.chatLoading) {
+        setChatStatus("Loading messages...", { error: false });
+      }
+    }
+
+    async function loadChatMessages(options = {}) {
+      if (!state.chatOpen) return;
+      if (state.chatLoading) return;
+      const force = Boolean(options.force);
+      const recipientKind = String(state.chatRecipientKind || "").trim().toLowerCase();
+      const recipientId = Math.trunc(Number(state.chatRecipientId) || 0);
+      if (recipientKind !== "channel" && recipientKind !== "direct") return;
+
+      const data = state.lastServerData;
+      const currentRevision = chatRevisionFromData(data);
+      const loadKey = chatRecipientKey(recipientKind, recipientId);
+      if (!force && state.chatLoadedKey === loadKey && state.lastChatRevision === currentRevision) {
+        return;
+      }
+
+      state.chatLoading = true;
+      renderChatPanel(data);
+      try {
+        const query = new URLSearchParams({
+          recipient_kind: recipientKind,
+          recipient_id: String(recipientId),
+          limit: "400",
+        });
+        const response = await fetch(`/api/chat/messages?${query.toString()}`, { cache: "no-store" });
+        let body = null;
+        try {
+          body = await response.json();
+        } catch (_e) {
+        }
+        if (!response.ok || !body || body.ok === false) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to load messages";
+          setChatStatus(detail, { error: true });
+          return;
+        }
+        state.chatMessages = Array.isArray(body.messages) ? body.messages : [];
+        state.chatLoadedKey = loadKey;
+        setChatStatus("", { error: false });
+      } catch (e) {
+        setChatStatus(String(e || "failed to load messages"), { error: true });
+      } finally {
+        state.chatLoading = false;
+        renderChatPanel(data);
+        try {
+          if (chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          }
+        } catch (_e) {
+        }
+      }
+    }
+
+    async function sendChatMessage() {
+      if (state.chatSendBusy) return;
+      const text = String(chatInput && chatInput.value || "").trim();
+      if (!text) return;
+      const recipientKind = String(state.chatRecipientKind || "").trim().toLowerCase();
+      const recipientId = Math.trunc(Number(state.chatRecipientId) || 0);
+      if (recipientKind !== "channel" && recipientKind !== "direct") return;
+
+      state.chatSendBusy = true;
+      setChatStatus("Sending message...", { error: false });
+      renderChatPanel(state.lastServerData);
+      try {
+        const { ok, body } = await apiPost("/api/chat/send", {
+          recipient_kind: recipientKind,
+          recipient_id: recipientId,
+          text,
+        });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to send message";
+          setChatStatus(detail, { error: true });
+          return;
+        }
+        if (chatInput) chatInput.value = "";
+        setChatStatus("Message sent.", { error: false });
+        if (body && body.snapshot && typeof body.snapshot === "object") {
+          applySnapshot(body.snapshot, { force: true });
+        } else {
+          await refresh({ force: true });
+        }
+      } catch (e) {
+        setChatStatus(String(e || "failed to send message"), { error: true });
+      } finally {
+        state.chatSendBusy = false;
+        renderChatPanel(state.lastServerData);
+      }
+    }
+
+    function openChat(options = {}) {
+      const nodeNumValue = Number(options.nodeNum);
+      if (Number.isFinite(nodeNumValue)) {
+        state.chatRecipientKind = "direct";
+        state.chatRecipientId = Math.trunc(nodeNumValue);
+      }
+      state.chatOpen = true;
+      setChatStatus("", { error: false });
+      renderChatPanel(state.lastServerData);
+      loadChatMessages({ force: true });
+      try {
+        if (chatInput) chatInput.focus();
+      } catch (_e) {
+      }
+    }
+
+    function closeChat() {
+      state.chatOpen = false;
+      renderChatPanel(state.lastServerData);
+      try {
+        if (chatOpen) chatOpen.focus();
+      } catch (_e) {
+      }
     }
 
     function setActiveTab(tabName) {
@@ -1889,6 +2509,15 @@ MAP_HTML = """<!doctype html>
     traceDetailsClose.addEventListener("click", () => {
       clearSelection();
     });
+    map.on("click", () => {
+      collapseSpiderGroup();
+    });
+    map.on("zoomstart", () => {
+      collapseSpiderGroup({ skipSelectionVisual: true });
+    });
+    map.on("movestart", () => {
+      collapseSpiderGroup({ skipSelectionVisual: true });
+    });
     nodeSearchInput.addEventListener("input", () => {
       state.nodeSearchQuery = String(nodeSearchInput.value || "");
       if (state.lastData) {
@@ -1900,6 +2529,50 @@ MAP_HTML = """<!doctype html>
       if (state.lastData) {
         renderNodeList(state.lastData.nodes || []);
       }
+    });
+    if (chatRecipient) {
+      chatRecipient.addEventListener("change", () => {
+        const value = String(chatRecipient.value || "");
+        const parts = value.split(":");
+        const kind = String(parts[0] || "").trim().toLowerCase();
+        const idValue = Number(parts[1]);
+        if ((kind !== "channel" && kind !== "direct") || !Number.isFinite(idValue)) {
+          return;
+        }
+        state.chatRecipientKind = kind;
+        state.chatRecipientId = Math.trunc(idValue);
+        state.chatMessages = [];
+        state.chatLoadedKey = "";
+        renderChatPanel(state.lastServerData);
+        loadChatMessages({ force: true });
+      });
+    }
+    if (chatSend) {
+      chatSend.addEventListener("click", () => {
+        sendChatMessage();
+      });
+    }
+    if (chatInput) {
+      chatInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        sendChatMessage();
+      });
+    }
+    if (chatOpen) {
+      chatOpen.addEventListener("click", () => {
+        if (state.chatOpen) {
+          closeChat();
+        } else {
+          openChat();
+        }
+      });
+    }
+    if (chatClose) {
+      chatClose.addEventListener("click", () => closeChat());
+    }
+    window.addEventListener("resize", () => {
+      positionChatModal();
     });
 
     function nodeLabel(node) {
@@ -2018,10 +2691,21 @@ MAP_HTML = """<!doctype html>
       return text.replace(/_/g, " ");
     }
 
-    function formatNodeFlag(value) {
+    function formatNodeFlag(value, options = {}) {
+      const unknownText = Object.prototype.hasOwnProperty.call(options || {}, "unknownText")
+        ? String(options.unknownText)
+        : "-";
       if (value === true) return "Yes";
       if (value === false) return "No";
-      return "-";
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) return unknownText;
+        return value !== 0 ? "Yes" : "No";
+      }
+      const text = String(value ?? "").trim().toLowerCase();
+      if (!text) return unknownText;
+      if (["1", "true", "yes", "y", "on"].includes(text)) return "Yes";
+      if (["0", "false", "no", "n", "off"].includes(text)) return "No";
+      return unknownText;
     }
 
     function formatNodePublicKey(value) {
@@ -2062,23 +2746,59 @@ MAP_HTML = """<!doctype html>
 
     function nodeDetailsTabValue(rawTab) {
       const value = String(rawTab || "").trim().toLowerCase();
-      if (value === "device" || value === "environment" || value === "node_info") return value;
+      if (
+        value === "device"
+        || value === "environment"
+        || value === "position"
+        || value === "node_info"
+        || value === "traceroutes"
+      ) return value;
       return "node_info";
     }
 
     function nodeDetailsTabLabel(tabValue) {
       if (tabValue === "device") return "Device";
       if (tabValue === "environment") return "Environment";
+      if (tabValue === "position") return "Position";
+      if (tabValue === "traceroutes") return "Traceroutes";
       return "Node Info";
     }
 
-    function renderTelemetryRows(telemetry) {
+    function renderInfoRows(rows, emptyMessage = "No data yet.") {
+      const list = Array.isArray(rows)
+        ? rows.filter((row) => row && String(row.key || "").trim())
+        : [];
+      if (!list.length) {
+        return `<div class="telemetry-empty">${escapeHtml(emptyMessage)}</div>`;
+      }
+      return `
+        <div class="node-info-grid">
+          ${list.map((row) => {
+            const key = String(row.key || "").trim();
+            const value = row.value === undefined || row.value === null || String(row.value) === ""
+              ? "-"
+              : String(row.value);
+            const title = row.title === undefined || row.title === null ? "" : String(row.title);
+            const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+            return `
+              <div class="node-info-key">${escapeHtml(key)}</div>
+              <div class="node-info-value"${titleAttr}>${escapeHtml(value)}</div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function renderTelemetryRows(telemetry, options = {}) {
+      const emptyMessage = options && options.emptyMessage
+        ? String(options.emptyMessage)
+        : "No telemetry received yet.";
       if (!telemetry || typeof telemetry !== "object") {
-        return '<div class="telemetry-empty">No telemetry received yet.</div>';
+        return `<div class="telemetry-empty">${escapeHtml(emptyMessage)}</div>`;
       }
       const keys = Object.keys(telemetry).sort((a, b) => a.localeCompare(b));
       if (!keys.length) {
-        return '<div class="telemetry-empty">No telemetry received yet.</div>';
+        return `<div class="telemetry-empty">${escapeHtml(emptyMessage)}</div>`;
       }
       return `
         <div class="telemetry-grid">
@@ -2182,6 +2902,53 @@ MAP_HTML = """<!doctype html>
           busy: false,
           error: true,
           message: String(e || "failed to request node info"),
+        });
+        renderSelectionDetails();
+      }
+    }
+
+    async function requestNodePosition(nodeNum) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      if (!Number.isFinite(nodeNumInt)) return;
+      if (state.selectedNodeNum !== nodeNumInt) return;
+
+      setTelemetryRequestStatus(nodeNumInt, "position", {
+        busy: true,
+        error: false,
+        message: "Requesting position...",
+      });
+      renderSelectionDetails();
+
+      try {
+        const { ok, body } = await apiPost("/api/position/request", {
+          node_num: nodeNumInt,
+        });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to request position";
+          setTelemetryRequestStatus(nodeNumInt, "position", {
+            busy: false,
+            error: true,
+            message: detail,
+          });
+          renderSelectionDetails();
+          return;
+        }
+        const detail = body && body.detail
+          ? String(body.detail)
+          : "requested position";
+        setTelemetryRequestStatus(nodeNumInt, "position", {
+          busy: false,
+          error: false,
+          message: detail,
+        });
+        renderSelectionDetails();
+      } catch (e) {
+        setTelemetryRequestStatus(nodeNumInt, "position", {
+          busy: false,
+          error: true,
+          message: String(e || "failed to request position"),
         });
         renderSelectionDetails();
       }
@@ -2421,6 +3188,37 @@ MAP_HTML = """<!doctype html>
         typeof node.lon === "number" &&
         Number.isFinite(node.lon)
       );
+    }
+
+    function nodeCoordKey(node) {
+      if (!hasCoord(node)) return "";
+      return `${Number(node.lat).toFixed(7)},${Number(node.lon).toFixed(7)}`;
+    }
+
+    function spiderRadiusPx(count) {
+      const n = Math.max(0, Math.trunc(Number(count) || 0));
+      if (n <= 1) return SPIDERFY_RADIUS_MIN_PX;
+      const radius = SPIDERFY_RADIUS_MIN_PX + (n - 1) * SPIDERFY_RADIUS_STEP_PX;
+      return Math.min(SPIDERFY_RADIUS_MAX_PX, radius);
+    }
+
+    function spiderLayoutLatLngs(centerLatLng, count) {
+      const n = Math.max(0, Math.trunc(Number(count) || 0));
+      if (!centerLatLng || n <= 0) return [];
+      const centerPoint = map.latLngToLayerPoint(centerLatLng);
+      const angleStep = (Math.PI * 2) / n;
+      const radius = spiderRadiusPx(n);
+      const startAngle = -Math.PI / 2;
+      const latLngs = [];
+      for (let i = 0; i < n; i += 1) {
+        const angle = startAngle + i * angleStep;
+        const point = L.point(
+          centerPoint.x + radius * Math.cos(angle),
+          centerPoint.y + radius * Math.sin(angle)
+        );
+        latLngs.push(map.layerPointToLatLng(point));
+      }
+      return latLngs;
     }
 
     function metersPerLonDegree(lat) {
@@ -3191,15 +3989,14 @@ MAP_HTML = """<!doctype html>
       container.innerHTML = sorted.map((node) => {
         const num = Number(node.num);
         const hasPos = hasCoord(node);
-        const inferred = Boolean(node.estimated);
         const active = num === state.selectedNodeNum ? "active" : "";
-        const disabled = hasPos ? "" : "disabled";
-        const locationText = inferred ? "estimated from traceroute" : hasPos ? "GPS" : "no GPS";
+        const locationText = hasPos ? "" : "No position";
+        const locationSuffix = locationText ? ` | ${escapeHtml(locationText)}` : "";
         return `
-          <button class="list-item ${active}" type="button" data-node-num="${num}" ${disabled}>
-            <span class="item-title">${escapeHtml(nodeLabel(node))} ${hasPos ? "" : "(no GPS)"}</span>
+          <button class="list-item ${active}" type="button" data-node-num="${num}">
+            <span class="item-title">${escapeHtml(nodeLabel(node))}${hasPos ? "" : " (No position)"}</span>
             <span class="item-meta">${escapeHtml(node.long_name || "Unknown")} | ${escapeHtml(prettyAge(node, nowSec))}</span>
-            <span class="item-meta">#${escapeHtml(node.num)} | ${escapeHtml(node.id || "-")} | ${escapeHtml(locationText)}</span>
+            <span class="item-meta">#${escapeHtml(node.num)} | ${escapeHtml(node.id || "-")}${locationSuffix}</span>
           </button>
         `;
       }).join("");
@@ -3385,6 +4182,7 @@ MAP_HTML = """<!doctype html>
           </div>
         `;
         traceDetails.classList.remove("hidden");
+        positionChatModal();
         return;
       }
 
@@ -3463,17 +4261,17 @@ MAP_HTML = """<!doctype html>
           ? String(Math.trunc(channelValue))
           : "-";
         const roleText = formatNodeRole(node.role);
-        const viaMqttText = formatNodeFlag(node.via_mqtt);
-        const favoriteText = formatNodeFlag(node.is_favorite);
-        const ignoredText = formatNodeFlag(node.is_ignored);
-        const mutedText = formatNodeFlag(node.is_muted);
-        const keyVerifiedText = formatNodeFlag(node.is_key_manually_verified);
-        const licensedText = formatNodeFlag(node.is_licensed);
-        const unmessagableText = formatNodeFlag(node.is_unmessagable);
+        const viaMqttText = formatNodeFlag(node.via_mqtt, { unknownText: "No" });
+        const favoriteText = formatNodeFlag(node.is_favorite, { unknownText: "No" });
+        const ignoredText = formatNodeFlag(node.is_ignored, { unknownText: "No" });
+        const mutedText = formatNodeFlag(node.is_muted, { unknownText: "No" });
+        const keyVerifiedText = formatNodeFlag(node.is_key_manually_verified, { unknownText: "No" });
+        const licensedText = formatNodeFlag(node.is_licensed, { unknownText: "No" });
+        const unmessagableText = formatNodeFlag(node.is_unmessagable, { unknownText: "No" });
         const publicKeyText = formatNodePublicKey(node.public_key);
         const publicKeyTitle = String(node.public_key || "").trim();
 
-        const tabItems = ["node_info", "device", "environment"];
+        const tabItems = ["node_info", "traceroutes", "position", "device", "environment"];
         const tabButtonsHtml = tabItems.map((tabValue) => {
           const activeClass = selectedNodeTab === tabValue ? "active" : "";
           return `
@@ -3493,22 +4291,27 @@ MAP_HTML = """<!doctype html>
             ? String(nodeInfoRequestStatus.message || "")
             : "";
           const nodeInfoRequestError = Boolean(nodeInfoRequestStatus && nodeInfoRequestStatus.error);
+          const nodeInfoRows = [
+            { key: "Long Name", value: longName },
+            { key: "ID", value: node.id || "-" },
+            { key: "Hardware", value: node.hw_model || "-" },
+            { key: "Role", value: roleText },
+            { key: "Hops Away", value: hopsAwayText },
+            { key: "SNR", value: snrText },
+            { key: "Channel", value: channelText },
+            { key: "Via MQTT", value: viaMqttText },
+            { key: "Favorite", value: favoriteText },
+            { key: "Ignored", value: ignoredText },
+            { key: "Muted", value: mutedText },
+            { key: "Key Verified", value: keyVerifiedText },
+            { key: "Licensed", value: licensedText },
+            { key: "Unmessagable", value: unmessagableText },
+            { key: "Public Key", value: publicKeyText, title: publicKeyTitle },
+          ];
           tabBodyHtml = `
-            <span class="trace-meta-row"><span class="trace-label">Long Name</span>${escapeHtml(longName)}</span>
-            <span class="trace-meta-row"><span class="trace-label">ID</span>${escapeHtml(node.id || "-")}</span>
-            <span class="trace-meta-row"><span class="trace-label">Hardware</span>${escapeHtml(node.hw_model || "-")}</span>
-            <span class="trace-meta-row"><span class="trace-label">Role</span>${escapeHtml(roleText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Hops Away</span>${escapeHtml(hopsAwayText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">SNR</span>${escapeHtml(snrText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Channel</span>${escapeHtml(channelText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Via MQTT</span>${escapeHtml(viaMqttText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Favorite</span>${escapeHtml(favoriteText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Ignored</span>${escapeHtml(ignoredText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Muted</span>${escapeHtml(mutedText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Key Verified</span>${escapeHtml(keyVerifiedText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Licensed</span>${escapeHtml(licensedText)}</span>
-            <span class="trace-meta-row"><span class="trace-label">Unmessagable</span>${escapeHtml(unmessagableText)}</span>
-            <span class="trace-meta-row" ${publicKeyTitle ? `title="${escapeHtml(publicKeyTitle)}"` : ""}><span class="trace-label">Public Key</span>${escapeHtml(publicKeyText)}</span>
+            <div class="node-tab-panel">
+              ${renderInfoRows(nodeInfoRows)}
+            </div>
             <div class="trace-actions">
               <button id="requestNodeInfoBtn" class="trace-action-btn" type="button" ${nodeInfoRequestBusy || !canTraceNow ? "disabled" : ""}>
                 ${escapeHtml(nodeInfoRequestBusy ? "Requesting Node Info..." : "Request Node Info")}
@@ -3517,13 +4320,52 @@ MAP_HTML = """<!doctype html>
                 ${escapeHtml(nodeInfoRequestMessage || (canTraceNow ? "" : "Connect to a node to request node info."))}
               </span>
             </div>
-            <div class="trace-actions">
-              <button id="traceNowBtn" class="trace-action-btn" type="button" ${traceDisabled}>Run traceroute</button>
-              <span id="traceNowStatus" class="trace-action-status">${escapeHtml(traceHint)}</span>
-            </div>
+          `;
+        } else if (selectedNodeTab === "traceroutes") {
+          tabBodyHtml = `
             <div class="node-recent-traces">
               <span class="node-recent-title">Recent Traceroutes</span>
               ${recentTraceSectionHtml}
+            </div>
+            <div class="trace-actions">
+              <button id="traceNowBtn" class="trace-action-btn" type="button" ${traceDisabled}>Run Traceroute</button>
+              <span id="traceNowStatus" class="trace-action-status">${escapeHtml(traceHint)}</span>
+            </div>
+          `;
+        } else if (selectedNodeTab === "position") {
+          const positionRequestStatus = telemetryRequestStatus(selectedNodeNum, "position");
+          const positionRequestBusy = Boolean(positionRequestStatus && positionRequestStatus.busy);
+          const positionRequestMessage = positionRequestStatus
+            ? String(positionRequestStatus.message || "")
+            : "";
+          const positionRequestError = Boolean(positionRequestStatus && positionRequestStatus.error);
+          const positionData = node.position && typeof node.position === "object"
+            ? node.position
+            : {};
+          const positionUpdatedAt = String(node.position_updated_at_utc || "");
+          const positionSummaryRows = [
+            { key: "Source", value: locKind },
+            { key: "Latitude", value: lat },
+            { key: "Longitude", value: lon },
+            { key: "Last Heard UTC", value: formatEpochUtc(node.last_heard) },
+          ];
+
+          tabBodyHtml = `
+            <div class="node-tab-panel">
+              <div class="telemetry-updated">Last updated: ${escapeHtml(positionUpdatedAt || "-")}</div>
+              ${renderInfoRows(positionSummaryRows)}
+              ${renderTelemetryRows(positionData, { emptyMessage: "No position payload received yet." })}
+            </div>
+            <div class="trace-actions">
+              <button
+                id="requestPositionBtn"
+                class="trace-action-btn"
+                type="button"
+                ${positionRequestBusy || !canTraceNow ? "disabled" : ""}
+              >${escapeHtml(positionRequestBusy ? "Requesting Position..." : "Request Position")}</button>
+              <span id="requestPositionStatus" class="trace-action-status ${positionRequestError ? "error" : ""}">
+                ${escapeHtml(positionRequestMessage || (canTraceNow ? "" : "Connect to a node to request position."))}
+              </span>
             </div>
           `;
         } else {
@@ -3544,6 +4386,10 @@ MAP_HTML = """<!doctype html>
           const requestError = Boolean(requestStatus && requestStatus.error);
 
           tabBodyHtml = `
+            <div class="node-tab-panel">
+              <div class="telemetry-updated">Last updated: ${escapeHtml(telemetryUpdatedAt || "-")}</div>
+              ${renderTelemetryRows(telemetryData)}
+            </div>
             <div class="trace-actions">
               <button
                 id="requestTelemetryBtn"
@@ -3556,25 +4402,27 @@ MAP_HTML = """<!doctype html>
                 ${escapeHtml(requestMessage || (canTraceNow ? "" : "Connect to a node to request telemetry."))}
               </span>
             </div>
-            <div class="node-tab-panel">
-              <div class="telemetry-updated">Last updated: ${escapeHtml(telemetryUpdatedAt || "-")}</div>
-              ${renderTelemetryRows(telemetryData)}
-            </div>
           `;
         }
 
+        const nodeSummaryRows = [
+          { key: "Name", value: nodeLabel(node) },
+          { key: "Node", value: `#${node.num || "?"}` },
+          { key: "Last Heard", value: prettyAge(node, nowSec) },
+          { key: "Last Heard UTC", value: formatEpochUtc(node.last_heard) },
+        ];
         traceDetailsTitle.textContent = "Node Details";
         traceDetailsBody.innerHTML = `
-          <span class="trace-meta-row"><span class="trace-label">Name</span>${escapeHtml(nodeLabel(node))}</span>
-          <span class="trace-meta-row"><span class="trace-label">Node</span>#${escapeHtml(node.num || "?")}</span>
-          <span class="trace-meta-row"><span class="trace-label">Last Heard</span>${escapeHtml(prettyAge(node, nowSec))}</span>
-          <span class="trace-meta-row"><span class="trace-label">Last Heard UTC</span>${escapeHtml(formatEpochUtc(node.last_heard))}</span>
-          <span class="trace-meta-row"><span class="trace-label">Location</span>${escapeHtml(locKind)}</span>
-          <span class="trace-meta-row"><span class="trace-label">Lat/Lon</span>${escapeHtml(lat)}, ${escapeHtml(lon)}</span>
+          <div class="node-summary-panel">
+            ${renderInfoRows(nodeSummaryRows)}
+          </div>
           <div class="node-detail-tabs">
             ${tabButtonsHtml}
           </div>
           ${tabBodyHtml}
+          <div class="trace-actions">
+            <button id="openNodeChatBtn" class="trace-action-btn" type="button">Message</button>
+          </div>
         `;
         for (const tabBtn of traceDetailsBody.querySelectorAll("button[data-node-tab]")) {
           tabBtn.addEventListener("click", () => {
@@ -3586,21 +4434,22 @@ MAP_HTML = """<!doctype html>
         }
 
         if (selectedNodeTab === "node_info") {
-          const traceNowBtn = document.getElementById("traceNowBtn");
-          const traceNowStatus = document.getElementById("traceNowStatus");
           const requestNodeInfoBtn = document.getElementById("requestNodeInfoBtn");
-          for (const btn of traceDetailsBody.querySelectorAll("button[data-recent-trace-id]")) {
-            btn.addEventListener("click", () => {
-              const traceId = Number(btn.dataset.recentTraceId);
-              if (!Number.isFinite(traceId)) return;
-              focusTrace(traceId);
-            });
-          }
           if (requestNodeInfoBtn) {
             requestNodeInfoBtn.addEventListener("click", () => {
               const nodeNum = Number(node.num);
               if (!Number.isFinite(nodeNum)) return;
               requestNodeInfo(nodeNum);
+            });
+          }
+        } else if (selectedNodeTab === "traceroutes") {
+          const traceNowBtn = document.getElementById("traceNowBtn");
+          const traceNowStatus = document.getElementById("traceNowStatus");
+          for (const btn of traceDetailsBody.querySelectorAll("button[data-recent-trace-id]")) {
+            btn.addEventListener("click", () => {
+              const traceId = Number(btn.dataset.recentTraceId);
+              if (!Number.isFinite(traceId)) return;
+              focusTrace(traceId);
             });
           }
           if (traceNowBtn) {
@@ -3643,6 +4492,15 @@ MAP_HTML = """<!doctype html>
               refresh();
             });
           }
+        } else if (selectedNodeTab === "position") {
+          const requestPositionBtn = document.getElementById("requestPositionBtn");
+          if (requestPositionBtn) {
+            requestPositionBtn.addEventListener("click", () => {
+              const nodeNum = Number(node.num);
+              if (!Number.isFinite(nodeNum)) return;
+              requestNodePosition(nodeNum);
+            });
+          }
         } else {
           const requestBtn = document.getElementById("requestTelemetryBtn");
           if (requestBtn) {
@@ -3654,12 +4512,22 @@ MAP_HTML = """<!doctype html>
             });
           }
         }
+        const openNodeChatBtn = document.getElementById("openNodeChatBtn");
+        if (openNodeChatBtn) {
+          openNodeChatBtn.addEventListener("click", () => {
+            const nodeNum = Number(node.num);
+            if (!Number.isFinite(nodeNum)) return;
+            openChat({ nodeNum });
+          });
+        }
         traceDetails.classList.remove("hidden");
+        positionChatModal();
         return;
       }
 
       traceDetails.classList.add("hidden");
       traceDetailsBody.innerHTML = "";
+      positionChatModal();
     }
 
     function clearSelection() {
@@ -3678,7 +4546,7 @@ MAP_HTML = """<!doctype html>
 
     function renderTraceList(traces) {
       const container = document.getElementById("traceList");
-      const recent = Array.isArray(traces) ? traces.slice(-50).reverse() : [];
+      const recent = Array.isArray(traces) ? traces.slice().reverse() : [];
       if (!recent.length) {
         container.innerHTML = '<div class="empty">No completed traceroutes yet.</div>';
         return;
@@ -3715,6 +4583,71 @@ MAP_HTML = """<!doctype html>
         if (!badge) continue;
         badge.classList.toggle("node-selected", num === state.selectedNodeNum);
       }
+    }
+
+    function collapseSpiderGroup(options = {}) {
+      const key = String(state.activeSpiderGroupKey || "");
+      if (!key) {
+        spiderLayer.clearLayers();
+        return;
+      }
+      const group = state.spiderGroups.get(key);
+      if (group && Array.isArray(group.markers)) {
+        for (const item of group.markers) {
+          if (!item || !item.marker) continue;
+          item.marker.setLatLng(group.centerLatLng);
+          item.marker.setZIndexOffset(0);
+        }
+      }
+      spiderLayer.clearLayers();
+      state.activeSpiderGroupKey = null;
+      if (!options.skipSelectionVisual) {
+        applyNodeSelectionVisual();
+      }
+    }
+
+    function expandSpiderGroup(coordKey) {
+      const key = String(coordKey || "");
+      if (!key) return false;
+      const group = state.spiderGroups.get(key);
+      if (!group || !Array.isArray(group.markers) || group.markers.length <= 1) return false;
+      if (state.activeSpiderGroupKey === key) return true;
+
+      collapseSpiderGroup({ skipSelectionVisual: true });
+
+      const targets = spiderLayoutLatLngs(group.centerLatLng, group.markers.length);
+      spiderLayer.clearLayers();
+      for (let i = 0; i < group.markers.length; i += 1) {
+        const item = group.markers[i];
+        const marker = item && item.marker ? item.marker : null;
+        if (!marker) continue;
+        const target = targets[i] || group.centerLatLng;
+        marker.setLatLng(target);
+        marker.setZIndexOffset(1000 + i);
+        L.polyline([group.centerLatLng, target], {
+          color: "#8fa7d0",
+          weight: 1.25,
+          opacity: 0.78,
+          dashArray: "2 4",
+          interactive: false,
+        }).addTo(spiderLayer);
+      }
+      state.activeSpiderGroupKey = key;
+      applyNodeSelectionVisual();
+      return true;
+    }
+
+    function handleMapMarkerClick(nodeNum, coordKey) {
+      const key = String(coordKey || "");
+      const group = key ? state.spiderGroups.get(key) : null;
+      const overlap = Boolean(group && Array.isArray(group.markers) && group.markers.length > 1);
+      const isExpanded = overlap && state.activeSpiderGroupKey === key;
+
+      if (overlap && !isExpanded) {
+        expandSpiderGroup(key);
+        return;
+      }
+      focusNode(nodeNum, { switchToNodesTab: true, scrollNodeListIntoView: true, panZoom: false });
     }
 
     function applyTraceSelectionVisual() {
@@ -3855,15 +4788,20 @@ MAP_HTML = """<!doctype html>
         state.selectedNodeNum = null;
       }
 
+      const previousSpiderKey = String(state.activeSpiderGroupKey || "");
+      collapseSpiderGroup({ skipSelectionVisual: true });
       markerLayer.clearLayers();
       edgeLayer.clearLayers();
+      spiderLayer.clearLayers();
       state.markerByNum.clear();
       state.edgePolylinesByTrace.clear();
+      state.spiderGroups.clear();
 
       const bounds = [];
       const nowSec = Date.now() / 1000;
       const displayNodes = Array.from(state.nodeByNum.values());
       const visibleTraceNodes = selectedTraceNodeNums();
+      const overlapGroups = new Map();
 
       for (const node of displayNodes) {
         if (!hasCoord(node)) continue;
@@ -3884,10 +4822,32 @@ MAP_HTML = """<!doctype html>
           popupAnchor: [0, -14],
         });
         const marker = L.marker(ll, { icon, riseOnHover: true, keyboard: false }).addTo(markerLayer);
+        const coordKey = nodeCoordKey(node);
+        if (coordKey) {
+          if (!overlapGroups.has(coordKey)) {
+            overlapGroups.set(coordKey, {
+              centerLatLng: L.latLng(node.lat, node.lon),
+              markers: [],
+            });
+          }
+          overlapGroups.get(coordKey).markers.push({
+            nodeNum,
+            marker,
+          });
+        }
         marker.on("click", () => {
-          focusNode(nodeNum, { switchToNodesTab: true, scrollNodeListIntoView: true, panZoom: false });
+          handleMapMarkerClick(nodeNum, coordKey);
         });
         state.markerByNum.set(nodeNum, marker);
+      }
+
+      for (const [coordKey, group] of overlapGroups.entries()) {
+        if (!group || !Array.isArray(group.markers) || group.markers.length <= 1) continue;
+        group.markers.sort((a, b) => Number(a.nodeNum) - Number(b.nodeNum));
+        state.spiderGroups.set(coordKey, group);
+      }
+      if (previousSpiderKey && state.spiderGroups.has(previousSpiderKey)) {
+        expandSpiderGroup(previousSpiderKey);
       }
 
       for (const trace of data.traces || []) {
@@ -3919,6 +4879,7 @@ MAP_HTML = """<!doctype html>
       applyNodeSelectionVisual();
       applyTraceSelectionVisual();
       renderSelectionDetails();
+      renderChatPanel(data);
       state.lastDrawSelectedTraceId = state.selectedTraceId;
 
       if (!state.fitted && bounds.length > 0) {
@@ -3943,6 +4904,8 @@ MAP_HTML = """<!doctype html>
         || styleSignature !== state.lastMapStyleSignature
       );
       const logsRevision = logRevisionOf(data);
+      const chatRevision = chatRevisionFromData(data);
+      const chatChanged = force || chatRevision !== state.lastChatRevision;
       state.lastServerData = data;
 
       if (mapChanged) {
@@ -3969,10 +4932,15 @@ MAP_HTML = """<!doctype html>
           state.lastLogRevision = logsRevision;
         }
         renderSelectionDetails();
+        renderChatPanel(data);
       }
 
       if (queueModal && !queueModal.classList.contains("hidden")) {
         renderQueueModal(data);
+      }
+      state.lastChatRevision = chatRevision;
+      if (state.chatOpen && chatChanged) {
+        loadChatMessages({ force: true });
       }
       state.lastSnapshotRevision = Math.max(state.lastSnapshotRevision, snapshotRevision);
     }
@@ -4155,6 +5123,41 @@ MAP_HTML = """<!doctype html>
       cfgInterval.value = value;
     }
 
+    function normalizeRetentionHours(raw, fallback = 720) {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed <= 0) return Math.trunc(Number(fallback));
+      return Math.trunc(parsed);
+    }
+
+    function retentionOptionLabel(hoursRaw) {
+      const hours = normalizeRetentionHours(hoursRaw, 720);
+      if (hours % 24 === 0) {
+        const days = Math.trunc(hours / 24);
+        return `${days} day${days === 1 ? "" : "s"}`;
+      }
+      return `${hours} hour${hours === 1 ? "" : "s"}`;
+    }
+
+    function setRetentionSelectValue(rawHours) {
+      if (!cfgTracerouteRetentionHours) return;
+      const normalized = normalizeRetentionHours(rawHours, 720);
+      const value = String(normalized);
+      let hasOption = false;
+      for (const opt of Array.from(cfgTracerouteRetentionHours.options || [])) {
+        if (String(opt.value || "").trim() === value) {
+          hasOption = true;
+          break;
+        }
+      }
+      if (!hasOption) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = retentionOptionLabel(normalized);
+        cfgTracerouteRetentionHours.appendChild(opt);
+      }
+      cfgTracerouteRetentionHours.value = value;
+    }
+
     function applyConfigToForm(config) {
       if (!config) return;
       if (cfgTracerouteBehavior) {
@@ -4166,8 +5169,7 @@ MAP_HTML = """<!doctype html>
       if (cfgFreshWindow) cfgFreshWindow.value = String(config.fresh_window ?? "");
       if (cfgMidWindow) cfgMidWindow.value = String(config.mid_window ?? "");
       if (cfgHopLimit) cfgHopLimit.value = String(config.hop_limit ?? "");
-      if (cfgMaxMapTraces) cfgMaxMapTraces.value = String(config.max_map_traces ?? "");
-      if (cfgMaxStoredTraces) cfgMaxStoredTraces.value = String(config.max_stored_traces ?? "");
+      setRetentionSelectValue(config.traceroute_retention_hours ?? 720);
       if (cfgWebhookUrl) cfgWebhookUrl.value = String(config.webhook_url ?? "");
       state.configTokenSet = Boolean(config.webhook_api_token_set);
       state.configTokenTouched = false;
@@ -4236,8 +5238,7 @@ MAP_HTML = """<!doctype html>
         fresh_window: asInt(cfgFreshWindow?.value, 120),
         mid_window: asInt(cfgMidWindow?.value, 480),
         hop_limit: asInt(cfgHopLimit?.value, 7),
-        max_map_traces: asInt(cfgMaxMapTraces?.value, 800),
-        max_stored_traces: asInt(cfgMaxStoredTraces?.value, 50000),
+        traceroute_retention_hours: asInt(cfgTracerouteRetentionHours?.value, 720),
         webhook_url: String(cfgWebhookUrl?.value || "").trim() || null,
       };
       if (state.configTokenTouched) {
@@ -4274,15 +5275,49 @@ MAP_HTML = """<!doctype html>
         fresh_window: 120,
         mid_window: 480,
         hop_limit: 7,
+        traceroute_retention_hours: 720,
         webhook_url: null,
         webhook_api_token: null,
-        max_map_traces: 800,
-        max_stored_traces: 50000,
       };
       applyConfigToForm(defaults);
       state.configTokenTouched = true;
       markConfigDirty();
       setCfgStatus("Reset to defaults (not applied).", { error: false });
+    }
+
+    async function resetDatabase() {
+      const confirmed = window.confirm(
+        "This will permanently delete ALL data in the Meshtracer database and disconnect from the current node. Continue?"
+      );
+      if (!confirmed) return;
+
+      setCfgStatus("Resetting database...", { error: false });
+      if (cfgResetDatabase) cfgResetDatabase.disabled = true;
+      if (cfgApply) cfgApply.disabled = true;
+      if (cfgReset) cfgReset.disabled = true;
+
+      try {
+        const { ok, body } = await apiPost("/api/database/reset", {});
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "database reset failed";
+          setCfgStatus(detail, { error: true });
+          return;
+        }
+        state.configDirty = false;
+        state.configLoaded = false;
+        state.telemetryRequestState = {};
+        setCfgStatus("Database reset complete. Disconnected.", { error: false });
+      } catch (e) {
+        setCfgStatus(String(e || "database reset failed"), { error: true });
+      } finally {
+        if (cfgResetDatabase) cfgResetDatabase.disabled = false;
+        if (cfgApply) cfgApply.disabled = false;
+        if (cfgReset) cfgReset.disabled = false;
+      }
+
+      refresh({ force: true });
     }
 
     const HELP_COPY = {
@@ -4320,17 +5355,11 @@ Must be >= Fresh Window.`,
 
 Higher values can discover longer routes but may take longer. Meshtracer derives an internal per-hop timeout from (interval / hop_limit).`,
       },
-      max_map_traces: {
-        title: "Max Map Traces",
-        body: `Maximum number of completed traceroutes included in the map/API snapshot.
+      traceroute_retention_hours: {
+        title: "Delete traceroutes older than",
+        body: `Completed traceroutes older than this age are deleted from SQLite.
 
-This only affects what the UI loads and renders; it does not delete history from the database.`,
-      },
-      max_stored_traces: {
-        title: "Max Stored Traces",
-        body: `Maximum number of completed traceroutes kept in SQLite for the connected node partition.
-
-Set to 0 to disable pruning (database can grow without bound).`,
+Meshtracer displays all stored traceroutes from the database; this setting controls how long history is retained.`,
       },
       webhook_url: {
         title: "Webhook URL",
@@ -4455,6 +5484,7 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     if (manageTraceQueueBtn) manageTraceQueueBtn.addEventListener("click", () => openQueueModal());
     if (cfgApply) cfgApply.addEventListener("click", () => applyConfig());
     if (cfgReset) cfgReset.addEventListener("click", () => resetConfig());
+    if (cfgResetDatabase) cfgResetDatabase.addEventListener("click", () => resetDatabase());
     if (configOpen) configOpen.addEventListener("click", () => openConfig());
     if (configOverlay) configOverlay.addEventListener("click", () => closeConfig());
     if (configClose) configClose.addEventListener("click", () => closeConfig());
@@ -4472,6 +5502,10 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
         closeQueueModal();
         return;
       }
+      if (chatModal && !chatModal.classList.contains("hidden")) {
+        closeChat();
+        return;
+      }
       if (configModal && !configModal.classList.contains("hidden")) {
         closeConfig();
       }
@@ -4486,8 +5520,7 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
       cfgFreshWindow,
       cfgMidWindow,
       cfgHopLimit,
-      cfgMaxMapTraces,
-      cfgMaxStoredTraces,
+      cfgTracerouteRetentionHours,
       cfgWebhookUrl,
     ]) {
       if (!el) continue;
@@ -4604,8 +5637,12 @@ def start_map_server(
     connect: Callable[[str], tuple[bool, str]],
     disconnect: Callable[[], tuple[bool, str]],
     run_traceroute: Callable[[int], tuple[bool, str]],
+    send_chat_message: Callable[[str, int, str], tuple[bool, str]],
+    get_chat_messages: Callable[[str, int, int], tuple[bool, str, list[dict[str, Any]], int]],
     request_node_telemetry: Callable[[int, str], tuple[bool, str]],
     request_node_info: Callable[[int], tuple[bool, str]],
+    request_node_position: Callable[[int], tuple[bool, str]],
+    reset_database: Callable[[], tuple[bool, str]],
     remove_traceroute_queue_entry: Callable[[int], tuple[bool, str]],
     rescan_discovery: Callable[[], tuple[bool, str]],
     get_config: Callable[[], dict[str, Any]],
@@ -4713,6 +5750,34 @@ def start_map_server(
             if path == "/api/config":
                 self._send_json({"ok": True, "config": get_config()})
                 return
+            if path == "/api/chat/messages":
+                query = parse_qs(url.query, keep_blank_values=False)
+                recipient_kind = str(query.get("recipient_kind", ["channel"])[0] or "").strip().lower()
+                recipient_id_raw = query.get("recipient_id", [0])[0]
+                limit_raw = query.get("limit", [300])[0]
+                try:
+                    recipient_id = int(recipient_id_raw)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "invalid_recipient_id"}, status=400)
+                    return
+                try:
+                    limit = int(limit_raw)
+                except (TypeError, ValueError):
+                    limit = 300
+                ok, detail, messages, revision = get_chat_messages(recipient_kind, recipient_id, limit)
+                status = 200 if ok else 400
+                self._send_json(
+                    {
+                        "ok": ok,
+                        "detail": detail,
+                        "recipient_kind": recipient_kind,
+                        "recipient_id": recipient_id,
+                        "messages": messages,
+                        "chat_revision": int(revision),
+                    },
+                    status=status,
+                )
+                return
             if path == "/healthz":
                 self._send_json({"ok": True, "at_utc": utc_now()})
                 return
@@ -4771,6 +5836,25 @@ def start_map_server(
                 status = 200 if ok else 400
                 self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
                 return
+            if path == "/api/chat/send":
+                body, err = self._read_json_body()
+                if err is not None or body is None:
+                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                    return
+
+                recipient_kind = str(body.get("recipient_kind") or "").strip().lower()
+                recipient_id_raw = body.get("recipient_id")
+                text = str(body.get("text") or "")
+                try:
+                    recipient_id = int(recipient_id_raw)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "invalid_recipient_id"}, status=400)
+                    return
+
+                ok, detail = send_chat_message(recipient_kind, recipient_id, text)
+                status = 200 if ok else 400
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
             if path == "/api/telemetry/request":
                 body, err = self._read_json_body()
                 if err is not None or body is None:
@@ -4804,6 +5888,26 @@ def start_map_server(
                     return
                 ok, detail = request_node_info(node_num)
                 status = 200 if ok else 400
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
+            if path == "/api/position/request":
+                body, err = self._read_json_body()
+                if err is not None or body is None:
+                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                    return
+                node_num_raw = body.get("node_num")
+                try:
+                    node_num = int(node_num_raw)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
+                    return
+                ok, detail = request_node_position(node_num)
+                status = 200 if ok else 400
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
+            if path == "/api/database/reset":
+                ok, detail = reset_database()
+                status = 200 if ok else 500
                 self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
                 return
             if path == "/api/traceroute/queue/remove":

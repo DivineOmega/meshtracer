@@ -86,12 +86,9 @@ Options:
 - `--db-path <path>`
   - Default: `meshtracer.db`
   - SQLite file used for persisted nodes/traceroutes history
-- `--max-map-traces <int>`
-  - Default: `800`
-  - Max number of completed traces included in `/api/map`
-- `--max-stored-traces <int>`
-  - Default: `50000`
-  - Max number of completed traces stored in SQLite per connected mesh-node partition (`0` disables pruning)
+- `--traceroute-retention-hours <int>`
+  - Default: `720` (30 days)
+  - Deletes completed traceroutes older than this age in SQLite
 
 ## Runtime Behavior
 
@@ -144,8 +141,8 @@ Map data behavior:
 - The map includes a resizable/collapsible right sidebar with 3 tabs:
   - `Log`: runtime lines mirrored from terminal output
   - `Nodes`: known nodes list
-  - `Traces`: 50 most recent completed traceroutes
-- A settings (cog) button in the sidebar header opens the `Config` modal: runtime settings (interval/heard window/hop limit/webhook/storage)
+  - `Traces`: completed traceroutes stored in SQLite for the active partition
+- A settings (cog) button in the sidebar header opens the `Config` modal: runtime settings (interval/heard window/hop limit/webhook/storage retention)
 - Config changes are saved into the SQLite database and restored on restart.
 - Webhook API tokens are stored in SQLite in plaintext.
 - Interactions:
@@ -161,7 +158,7 @@ Map data behavior:
 
 - Database file: `--db-path` (default `meshtracer.db`)
 - Partition key: connected local Meshtastic node identity (`node:<num>[:<id>]`), with `host:<host>` fallback
-- Retention: `--max-stored-traces` keeps DB size bounded per partition
+- Retention: `--traceroute-retention-hours` deletes completed traceroutes older than the configured age
 - Storage model:
   - `nodes` table keyed by `(mesh_host, node_num)`
   - `traceroutes` table keyed by `trace_id` with `mesh_host` column for partitioning

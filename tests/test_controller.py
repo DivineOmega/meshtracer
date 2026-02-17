@@ -38,6 +38,18 @@ class _DummyTraceInterface(_DummyInterface):
         self.trace_calls.append((int(dest), int(hopLimit)))
 
 
+class _DummyChatInterface(_DummyInterface):
+    def __init__(self, local_num: int | None = None) -> None:
+        super().__init__(local_num=local_num)
+        self.sent_messages: list[dict[str, object]] = []
+        self._next_id = 2000
+
+    def sendText(self, text: str, **kwargs: object) -> dict[str, int]:
+        self.sent_messages.append({"text": text, **kwargs})
+        self._next_id += 1
+        return {"id": self._next_id}
+
+
 class _DummyTelemetryField:
     def __init__(self) -> None:
         self.last_copy = None
@@ -65,6 +77,13 @@ class _DummyTelemetryInterface(_DummyInterface):
         return {"id": len(self.sent_packets)}
 
 
+class _DummyPositionObject:
+    def __init__(self, latitude_i: int, longitude_i: int) -> None:
+        self.latitude_i = latitude_i
+        self.longitude_i = longitude_i
+        self.altitude = 100
+
+
 def _args(**overrides: object) -> SimpleNamespace:
     base: dict[str, object] = {
         "traceroute_behavior": None,
@@ -73,8 +92,7 @@ def _args(**overrides: object) -> SimpleNamespace:
         "fresh_window": None,
         "mid_window": None,
         "hop_limit": None,
-        "max_map_traces": None,
-        "max_stored_traces": None,
+        "traceroute_retention_hours": None,
         "webhook_url": None,
         "webhook_api_token": None,
         "web_ui": True,
@@ -119,8 +137,7 @@ class ControllerConfigTests(unittest.TestCase):
                         "hop_limit": 7,
                         "webhook_url": None,
                         "webhook_api_token": None,
-                        "max_map_traces": 800,
-                        "max_stored_traces": 50000,
+                        "traceroute_retention_hours": 720,
                     }
                 )
                 controller = MeshTracerController(
@@ -128,8 +145,7 @@ class ControllerConfigTests(unittest.TestCase):
                         interval=5,
                         heard_window=120,
                         hop_limit=7,
-                        max_map_traces=800,
-                        max_stored_traces=50000,
+                        traceroute_retention_hours=720,
                         db_path=str(db_path),
                     ),
                     store=store,
@@ -156,8 +172,7 @@ class ControllerConfigTests(unittest.TestCase):
                         "hop_limit": 7,
                         "webhook_url": "https://example.test/hook",
                         "webhook_api_token": "supersecret",
-                        "max_map_traces": 800,
-                        "max_stored_traces": 50000,
+                        "traceroute_retention_hours": 720,
                     }
                 )
                 controller = MeshTracerController(
@@ -238,6 +253,7 @@ class ControllerConfigTests(unittest.TestCase):
                 )
                 self.assertAlmostEqual(float(controller.get_config().get("interval") or 0.0), 5.0, places=3)
                 self.assertEqual(controller.get_config().get("traceroute_behavior"), "automatic")
+                self.assertEqual(controller.get_config().get("traceroute_retention_hours"), 720)
 
                 ok, detail = controller.set_config({"interval": 0.5})
                 self.assertTrue(ok, detail)
@@ -465,6 +481,50 @@ class ControllerConfigTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_request_node_position_uses_send_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                telemetry_iface = _DummyTelemetryInterface(local_num=1)
+                with controller._lock:
+                    controller._interface = telemetry_iface
+                    controller._worker_thread = _DummyWorker()
+                    controller._connection_state = "connected"
+
+                mesh_pb2 = SimpleNamespace(Position=type("Position", (), {}))
+                portnums_pb2 = SimpleNamespace(
+                    PortNum=SimpleNamespace(POSITION_APP=3),
+                )
+
+                def import_stub(module_name: str):
+                    if module_name == "meshtastic.protobuf.mesh_pb2":
+                        return mesh_pb2
+                    if module_name == "meshtastic.protobuf.portnums_pb2":
+                        return portnums_pb2
+                    raise ModuleNotFoundError(module_name)
+
+                with mock.patch("meshtracer_app.app.importlib.import_module", side_effect=import_stub):
+                    ok, detail = controller.request_node_position(42)
+
+                self.assertTrue(ok, detail)
+                self.assertIn("requested position", detail)
+                self.assertEqual(len(telemetry_iface.sent_packets), 1)
+                sent = telemetry_iface.sent_packets[0]
+                self.assertEqual(sent.get("destinationId"), 42)
+                self.assertEqual(sent.get("portNum"), 3)
+                self.assertEqual(sent.get("wantResponse"), True)
+            finally:
+                store.close()
+
     def test_telemetry_packet_types_detect_supported_fields(self) -> None:
         self.assertEqual(
             MeshTracerController._telemetry_packet_types(
@@ -492,6 +552,132 @@ class ControllerConfigTests(unittest.TestCase):
             ["device", "environment"],
         )
         self.assertEqual(MeshTracerController._telemetry_packet_types({"decoded": {}}), [])
+
+    def test_packet_type_helpers_detect_node_info_and_position(self) -> None:
+        self.assertTrue(
+            MeshTracerController._is_node_info_packet(
+                {"decoded": {"portnum": "NODEINFO_APP", "user": {"longName": "Node"}}}
+            )
+        )
+        self.assertTrue(
+            MeshTracerController._is_position_packet(
+                {
+                    "decoded": {
+                        "portnum": "POSITION_APP",
+                        "position": {"latitudeI": 515001234, "longitudeI": -1234567},
+                    }
+                }
+            )
+        )
+        self.assertFalse(MeshTracerController._is_node_info_packet({"decoded": {"portnum": "TEXT_MESSAGE_APP"}}))
+        self.assertFalse(MeshTracerController._is_position_packet({"decoded": {"portnum": "TEXT_MESSAGE_APP"}}))
+
+        lat, lon = MeshTracerController._packet_position(
+            {"decoded": {"position": {"latitudeI": 515001234, "longitudeI": -1234567}}}
+        )
+        self.assertAlmostEqual(lat or 0.0, 51.5001234, places=6)
+        self.assertAlmostEqual(lon or 0.0, -0.1234567, places=6)
+
+    def test_send_chat_message_and_get_chat_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                map_state = MapState(store=store, mesh_host="test:chat")
+                chat_iface = _DummyChatInterface(local_num=10)
+                with controller._lock:
+                    controller._interface = chat_iface
+                    controller._worker_thread = _DummyWorker()
+                    controller._map_state = map_state
+                    controller._connection_state = "connected"
+
+                ok, detail = controller.send_chat_message("channel", 0, "hello channel")
+                self.assertTrue(ok, detail)
+                ok, detail = controller.send_chat_message("direct", 42, "hello direct")
+                self.assertTrue(ok, detail)
+                self.assertEqual(len(chat_iface.sent_messages), 2)
+                self.assertEqual(chat_iface.sent_messages[0].get("destinationId"), "^all")
+                self.assertEqual(chat_iface.sent_messages[0].get("channelIndex"), 0)
+                self.assertEqual(chat_iface.sent_messages[1].get("destinationId"), 42)
+
+                ok, detail, channel_messages, channel_revision = controller.get_chat_messages("channel", 0, 100)
+                self.assertTrue(ok, detail)
+                self.assertGreaterEqual(channel_revision, 1)
+                self.assertEqual(len(channel_messages), 1)
+                self.assertEqual(channel_messages[0].get("text"), "hello channel")
+                self.assertEqual(channel_messages[0].get("direction"), "outgoing")
+
+                ok, detail, direct_messages, direct_revision = controller.get_chat_messages("direct", 42, 100)
+                self.assertTrue(ok, detail)
+                self.assertGreaterEqual(direct_revision, channel_revision)
+                self.assertEqual(len(direct_messages), 1)
+                self.assertEqual(direct_messages[0].get("text"), "hello direct")
+                self.assertEqual(direct_messages[0].get("peer_node_num"), 42)
+            finally:
+                store.close()
+
+    def test_capture_chat_from_packet_handles_channel_and_direct(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                map_state = MapState(store=store, mesh_host="test:chat-packets")
+                iface = _DummyChatInterface(local_num=10)
+
+                packet_channel = {
+                    "id": 3001,
+                    "from": 42,
+                    "to": 0xFFFFFFFF,
+                    "channel": 1,
+                    "rxTime": 1739740001,
+                    "decoded": {"portnum": "TEXT_MESSAGE_APP", "text": "channel hello"},
+                }
+                packet_direct = {
+                    "id": 3002,
+                    "from": 42,
+                    "to": 10,
+                    "rxTime": 1739740002,
+                    "decoded": {"portnum": "TEXT_MESSAGE_APP", "text": "direct hello"},
+                }
+
+                saved_channel = controller._capture_chat_from_packet(iface, map_state, packet_channel)
+                saved_direct = controller._capture_chat_from_packet(iface, map_state, packet_direct)
+                self.assertIsNotNone(saved_channel)
+                self.assertIsNotNone(saved_direct)
+                self.assertEqual((saved_channel or {}).get("message_type"), "channel")
+                self.assertEqual((saved_direct or {}).get("message_type"), "direct")
+                self.assertEqual((saved_direct or {}).get("peer_node_num"), 42)
+
+                channel_messages = store.list_chat_messages(
+                    "test:chat-packets",
+                    recipient_kind="channel",
+                    recipient_id=1,
+                )
+                direct_messages = store.list_chat_messages(
+                    "test:chat-packets",
+                    recipient_kind="direct",
+                    recipient_id=42,
+                )
+                self.assertEqual(len(channel_messages), 1)
+                self.assertEqual(len(direct_messages), 1)
+                self.assertEqual(channel_messages[0].get("text"), "channel hello")
+                self.assertEqual(direct_messages[0].get("text"), "direct hello")
+            finally:
+                store.close()
 
     def test_snapshot_includes_traceroute_control_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -521,6 +707,9 @@ class ControllerConfigTests(unittest.TestCase):
                 self.assertEqual(len(queue_entries), 2)
                 self.assertEqual(queue_entries[0].get("node_num"), 42)
                 self.assertEqual(queue_entries[1].get("node_num"), 99)
+                chat = snap.get("chat")
+                self.assertIsInstance(chat, dict)
+                self.assertIn(0, list(chat.get("channels") or []))
             finally:
                 store.close()
 
@@ -554,6 +743,74 @@ class ControllerConfigTests(unittest.TestCase):
                 self.assertEqual(len(remaining), 1)
                 self.assertEqual(remaining[0].get("queue_id"), running.get("queue_id"))
                 self.assertEqual(remaining[0].get("status"), "running")
+            finally:
+                store.close()
+
+    def test_reset_database_clears_db_and_disconnects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                map_state = MapState(store=store, mesh_host="test:reset")
+                store.set_runtime_config({"interval": 5, "heard_window": 120, "hop_limit": 7})
+                store.upsert_node(
+                    "test:reset",
+                    {
+                        "num": 42,
+                        "id": "!n42",
+                        "long_name": "Node 42",
+                        "short_name": "N42",
+                        "lat": 52.0,
+                        "lon": -2.0,
+                    },
+                )
+                store.add_traceroute(
+                    "test:reset",
+                    {
+                        "captured_at_utc": "2026-01-01 00:00:00 UTC",
+                        "packet": {
+                            "from": {"num": 42},
+                            "to": {"num": 1},
+                        },
+                        "route_towards_destination": [
+                            {"node": {"num": 1}},
+                            {"node": {"num": 42}},
+                        ],
+                        "route_back_to_origin": [
+                            {"node": {"num": 42}},
+                            {"node": {"num": 1}},
+                        ],
+                        "raw": {},
+                    },
+                )
+                store.enqueue_traceroute_target("test:reset", 42)
+                with controller._lock:
+                    controller._interface = _DummyInterface(local_num=1)
+                    controller._map_state = map_state
+                    controller._connection_state = "connected"
+                    controller._connected_host = "192.168.1.50"
+
+                ok, detail = controller.reset_database()
+                self.assertTrue(ok, detail)
+
+                self.assertIsNone(store.get_runtime_config())
+                nodes, traces = store.snapshot("test:reset", max_traces=10)
+                self.assertEqual(nodes, [])
+                self.assertEqual(traces, [])
+                self.assertEqual(store.list_traceroute_queue("test:reset"), [])
+
+                snap = controller.snapshot()
+                self.assertFalse(bool(snap.get("connected")))
+                self.assertEqual(str(snap.get("connection_state") or ""), "disconnected")
+                self.assertEqual(list(snap.get("nodes") or []), [])
+                self.assertEqual(list(snap.get("traces") or []), [])
             finally:
                 store.close()
 
@@ -645,6 +902,109 @@ class ControllerConfigTests(unittest.TestCase):
                 self.assertEqual(node.get("environment_telemetry", {}).get("temperature"), 19.5)
                 self.assertTrue(bool(node.get("device_telemetry_updated_at_utc")))
                 self.assertTrue(bool(node.get("environment_telemetry_updated_at_utc")))
+            finally:
+                store.close()
+
+    def test_map_state_updates_node_info_from_packet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                map_state = MapState(store=store, mesh_host="test:nodeinfo")
+                iface = _DummyInterface(local_num=1)
+                changed = map_state.update_node_info_from_packet(
+                    iface,
+                    {
+                        "from": 42,
+                        "rxTime": 1739740000,
+                        "decoded": {
+                            "user": {
+                                "id": "!node42",
+                                "longName": "Node 42",
+                                "shortName": "N42",
+                                "hwModel": "TBEAM",
+                            }
+                        },
+                    },
+                )
+                self.assertTrue(changed)
+
+                nodes, _traces = store.snapshot("test:nodeinfo", max_traces=10)
+                self.assertEqual(len(nodes), 1)
+                node = nodes[0]
+                self.assertEqual(node.get("num"), 42)
+                self.assertEqual(node.get("id"), "!node42")
+                self.assertEqual(node.get("long_name"), "Node 42")
+                self.assertEqual(node.get("short_name"), "N42")
+                self.assertEqual(node.get("hw_model"), "TBEAM")
+                self.assertEqual(node.get("last_heard"), 1739740000.0)
+            finally:
+                store.close()
+
+    def test_map_state_updates_position_from_packet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                map_state = MapState(store=store, mesh_host="test:position")
+                iface = _DummyInterface(local_num=1)
+                changed = map_state.update_position_from_packet(
+                    iface,
+                    {
+                        "from": 88,
+                        "rxTime": 1739740500,
+                        "decoded": {
+                            "position": {
+                                "latitudeI": 515001234,
+                                "longitudeI": -1234567,
+                            }
+                        },
+                    },
+                )
+                self.assertTrue(changed)
+
+                nodes, _traces = store.snapshot("test:position", max_traces=10)
+                self.assertEqual(len(nodes), 1)
+                node = nodes[0]
+                self.assertEqual(node.get("num"), 88)
+                self.assertAlmostEqual(float(node.get("lat") or 0.0), 51.5001234, places=6)
+                self.assertAlmostEqual(float(node.get("lon") or 0.0), -0.1234567, places=6)
+                self.assertEqual(node.get("last_heard"), 1739740500.0)
+            finally:
+                store.close()
+
+    def test_map_state_updates_position_from_object_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                map_state = MapState(store=store, mesh_host="test:position-object")
+                iface = _DummyInterface(local_num=1)
+                changed = map_state.update_position_from_packet(
+                    iface,
+                    {
+                        "from": 77,
+                        "rxTime": 1739740600,
+                        "decoded": {
+                            "position": _DummyPositionObject(
+                                latitude_i=515001234,
+                                longitude_i=-1234567,
+                            )
+                        },
+                    },
+                )
+                self.assertTrue(changed)
+
+                nodes, _traces = store.snapshot("test:position-object", max_traces=10)
+                self.assertEqual(len(nodes), 1)
+                node = nodes[0]
+                self.assertEqual(node.get("num"), 77)
+                self.assertAlmostEqual(float(node.get("lat") or 0.0), 51.5001234, places=6)
+                self.assertAlmostEqual(float(node.get("lon") or 0.0), -0.1234567, places=6)
+                position_payload = node.get("position") or {}
+                self.assertEqual(position_payload.get("latitudeI"), 515001234)
+                self.assertEqual(position_payload.get("longitudeI"), -1234567)
+                self.assertEqual(position_payload.get("altitude"), 100)
             finally:
                 store.close()
 
