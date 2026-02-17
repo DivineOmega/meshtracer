@@ -73,9 +73,9 @@ class MapState:
         with self._revision_lock:
             return self._revision
 
-    def update_nodes_from_interface(self, interface: Any) -> None:
+    def update_nodes_from_interface(self, interface: Any, *, bump_revision: bool = True) -> bool:
         if not hasattr(interface, "nodesByNum"):
-            return
+            return False
         summaries: list[dict[str, Any]] = []
         for raw_node in interface.nodesByNum.values():
             if not isinstance(raw_node, dict):
@@ -92,35 +92,114 @@ class MapState:
             summary["num"] = node_num
             summaries.append(summary)
         self._store.upsert_nodes(self._mesh_host, summaries)
-        if summaries:
+        if summaries and bump_revision:
             self._bump_revision()
+        return bool(summaries)
 
     def add_traceroute(self, result: dict[str, Any]) -> None:
         max_keep = self._max_stored_traces if self._max_stored_traces > 0 else None
         self._store.add_traceroute(self._mesh_host, result, max_keep=max_keep)
         self._bump_revision()
 
-    def update_node_from_num(self, interface: Any, node_num: Any) -> None:
+    def update_node_from_num(self, interface: Any, node_num: Any, *, bump_revision: bool = True) -> bool:
         try:
             node_num_int = int(node_num)
         except (TypeError, ValueError):
-            return
+            return False
         summary = node_summary_from_num(interface, node_num_int)
         self._store.upsert_node(self._mesh_host, summary)
-        self._bump_revision()
+        if bump_revision:
+            self._bump_revision()
+        return True
 
-    def update_node_from_dict(self, node: Any) -> None:
+    def update_node_from_dict(self, node: Any, *, bump_revision: bool = True) -> bool:
         if not isinstance(node, dict):
-            return
+            return False
         node_num = node.get("num")
         try:
             node_num_int = int(node_num)
         except (TypeError, ValueError):
-            return
+            return False
         summary = node_summary_from_node(node)
         summary["num"] = node_num_int
         self._store.upsert_node(self._mesh_host, summary)
-        self._bump_revision()
+        if bump_revision:
+            self._bump_revision()
+        return True
+
+    @staticmethod
+    def _pick_telemetry_metrics(telemetry: Any, camel_key: str, snake_key: str) -> dict[str, Any] | None:
+        if not isinstance(telemetry, dict):
+            return None
+        value = telemetry.get(camel_key)
+        if not isinstance(value, dict):
+            value = telemetry.get(snake_key)
+        if not isinstance(value, dict):
+            return None
+        return value
+
+    def update_telemetry_from_packet(
+        self,
+        interface: Any,
+        packet: Any,
+        *,
+        bump_revision: bool = True,
+    ) -> bool:
+        if not isinstance(packet, dict):
+            return False
+        try:
+            node_num = int(packet.get("from"))
+        except (TypeError, ValueError):
+            return False
+
+        decoded = packet.get("decoded")
+        telemetry = decoded.get("telemetry") if isinstance(decoded, dict) else None
+        if not isinstance(telemetry, dict):
+            return False
+
+        node_info = None
+        nodes_by_num = getattr(interface, "nodesByNum", None)
+        if isinstance(nodes_by_num, dict):
+            candidate = nodes_by_num.get(node_num)
+            if isinstance(candidate, dict):
+                node_info = candidate
+
+        changed = False
+        packet_device = self._pick_telemetry_metrics(telemetry, "deviceMetrics", "device_metrics")
+        if packet_device:
+            device_metrics = (
+                node_info.get("deviceMetrics") if isinstance(node_info, dict) else None
+            )
+            telemetry_payload = device_metrics if isinstance(device_metrics, dict) else packet_device
+            if telemetry_payload and self._store.upsert_node_telemetry(
+                self._mesh_host,
+                node_num,
+                "device",
+                telemetry_payload,
+            ):
+                changed = True
+
+        packet_environment = self._pick_telemetry_metrics(
+            telemetry, "environmentMetrics", "environment_metrics"
+        )
+        if packet_environment:
+            environment_metrics = (
+                node_info.get("environmentMetrics") if isinstance(node_info, dict) else None
+            )
+            telemetry_payload = (
+                environment_metrics if isinstance(environment_metrics, dict) else packet_environment
+            )
+            if telemetry_payload and self._store.upsert_node_telemetry(
+                self._mesh_host,
+                node_num,
+                "environment",
+                telemetry_payload,
+            ):
+                changed = True
+
+        if changed and bump_revision:
+            self._bump_revision()
+        return changed
 
     def snapshot(self) -> dict[str, Any]:
         nodes, traces = self._store.snapshot(mesh_host=self._mesh_host, max_traces=self._max_traces)

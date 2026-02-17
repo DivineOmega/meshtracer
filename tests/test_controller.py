@@ -6,6 +6,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from meshtracer_app.app import MeshTracerController
 from meshtracer_app.state import MapState, RuntimeLogBuffer
@@ -35,6 +36,33 @@ class _DummyTraceInterface(_DummyInterface):
 
     def sendTraceRoute(self, *, dest: int, hopLimit: int) -> None:
         self.trace_calls.append((int(dest), int(hopLimit)))
+
+
+class _DummyTelemetryField:
+    def __init__(self) -> None:
+        self.last_copy = None
+
+    def CopyFrom(self, value: object) -> None:
+        self.last_copy = value
+
+
+class _DummyTelemetryMessage:
+    def __init__(self) -> None:
+        self.device_metrics = _DummyTelemetryField()
+        self.environment_metrics = _DummyTelemetryField()
+
+
+class _DummyTelemetryInterface(_DummyInterface):
+    def __init__(self, local_num: int | None = None) -> None:
+        super().__init__(local_num=local_num)
+        self.sent_packets: list[dict[str, object]] = []
+        self.onResponseTelemetry = lambda _packet=None: None
+        self.isConnected = threading.Event()
+        self.isConnected.set()
+
+    def sendData(self, data: object, **kwargs: object) -> dict[str, int]:
+        self.sent_packets.append({"data": data, **kwargs})
+        return {"id": len(self.sent_packets)}
 
 
 def _args(**overrides: object) -> SimpleNamespace:
@@ -298,6 +326,173 @@ class ControllerConfigTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_request_node_telemetry_uses_non_blocking_send_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                telemetry_iface = _DummyTelemetryInterface(local_num=1)
+                with controller._lock:
+                    controller._interface = telemetry_iface
+                    controller._worker_thread = _DummyWorker()
+                    controller._connection_state = "connected"
+
+                telemetry_pb2 = SimpleNamespace(
+                    Telemetry=_DummyTelemetryMessage,
+                    DeviceMetrics=type("DeviceMetrics", (), {}),
+                    EnvironmentMetrics=type("EnvironmentMetrics", (), {}),
+                )
+                portnums_pb2 = SimpleNamespace(
+                    PortNum=SimpleNamespace(TELEMETRY_APP=67),
+                )
+
+                def import_stub(module_name: str):
+                    if module_name == "meshtastic.protobuf.telemetry_pb2":
+                        return telemetry_pb2
+                    if module_name == "meshtastic.protobuf.portnums_pb2":
+                        return portnums_pb2
+                    raise ModuleNotFoundError(module_name)
+
+                with mock.patch("meshtracer_app.app.importlib.import_module", side_effect=import_stub):
+                    ok, detail = controller.request_node_telemetry(42, "device")
+
+                self.assertTrue(ok, detail)
+                self.assertIn("requested device telemetry", detail)
+                self.assertEqual(len(telemetry_iface.sent_packets), 1)
+                sent = telemetry_iface.sent_packets[0]
+                self.assertEqual(sent.get("destinationId"), 42)
+                self.assertEqual(sent.get("portNum"), 67)
+                self.assertEqual(sent.get("wantResponse"), True)
+                self.assertIsNone(sent.get("onResponse"))
+            finally:
+                store.close()
+
+    def test_request_node_telemetry_validates_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                _set_connected_state(controller, store, local_num=1)
+                ok, detail = controller.request_node_telemetry(42, "unsupported")
+                self.assertFalse(ok)
+                self.assertEqual(detail, "invalid telemetry_type")
+            finally:
+                store.close()
+
+    def test_request_node_telemetry_rejects_when_interface_reconnecting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                telemetry_iface = _DummyTelemetryInterface(local_num=1)
+                telemetry_iface.isConnected.clear()
+                with controller._lock:
+                    controller._interface = telemetry_iface
+                    controller._worker_thread = _DummyWorker()
+                    controller._connection_state = "connected"
+
+                ok, detail = controller.request_node_telemetry(42, "device")
+                self.assertFalse(ok)
+                self.assertEqual(detail, "meshtastic interface is reconnecting")
+                self.assertEqual(telemetry_iface.sent_packets, [])
+            finally:
+                store.close()
+
+    def test_request_node_info_uses_send_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                telemetry_iface = _DummyTelemetryInterface(local_num=1)
+                with controller._lock:
+                    controller._interface = telemetry_iface
+                    controller._worker_thread = _DummyWorker()
+                    controller._connection_state = "connected"
+
+                mesh_pb2 = SimpleNamespace(User=type("User", (), {}))
+                portnums_pb2 = SimpleNamespace(
+                    PortNum=SimpleNamespace(NODEINFO_APP=4),
+                )
+
+                def import_stub(module_name: str):
+                    if module_name == "meshtastic.protobuf.mesh_pb2":
+                        return mesh_pb2
+                    if module_name == "meshtastic.protobuf.portnums_pb2":
+                        return portnums_pb2
+                    raise ModuleNotFoundError(module_name)
+
+                with mock.patch("meshtracer_app.app.importlib.import_module", side_effect=import_stub):
+                    ok, detail = controller.request_node_info(42)
+
+                self.assertTrue(ok, detail)
+                self.assertIn("requested node info", detail)
+                self.assertEqual(len(telemetry_iface.sent_packets), 1)
+                sent = telemetry_iface.sent_packets[0]
+                self.assertEqual(sent.get("destinationId"), 42)
+                self.assertEqual(sent.get("portNum"), 4)
+                self.assertEqual(sent.get("wantResponse"), True)
+            finally:
+                store.close()
+
+    def test_telemetry_packet_types_detect_supported_fields(self) -> None:
+        self.assertEqual(
+            MeshTracerController._telemetry_packet_types(
+                {"decoded": {"telemetry": {"deviceMetrics": {"batteryLevel": 50}}}}
+            ),
+            ["device"],
+        )
+        self.assertEqual(
+            MeshTracerController._telemetry_packet_types(
+                {"decoded": {"telemetry": {"environment_metrics": {"temperature": 21.2}}}}
+            ),
+            ["environment"],
+        )
+        self.assertEqual(
+            MeshTracerController._telemetry_packet_types(
+                {
+                    "decoded": {
+                        "telemetry": {
+                            "device_metrics": {"batteryLevel": 50},
+                            "environmentMetrics": {"temperature": 21.2},
+                        }
+                    }
+                }
+            ),
+            ["device", "environment"],
+        )
+        self.assertEqual(MeshTracerController._telemetry_packet_types({"decoded": {}}), [])
+
     def test_snapshot_includes_traceroute_control_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"
@@ -407,6 +602,49 @@ class ControllerConfigTests(unittest.TestCase):
                 next_revision = controller.wait_for_snapshot_revision(since, timeout=1.0)
                 thread.join(timeout=1.0)
                 self.assertGreater(next_revision, since)
+            finally:
+                store.close()
+
+    def test_map_state_updates_telemetry_from_packet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                map_state = MapState(store=store, mesh_host="test:telemetry")
+                iface = _DummyInterface(local_num=1)
+                iface.nodesByNum = {
+                    42: {
+                        "num": 42,
+                        "id": "!node42",
+                        "user": {"id": "!node42", "longName": "Node 42", "shortName": "N42"},
+                        "deviceMetrics": {"batteryLevel": 73, "voltage": 3.9},
+                        "environmentMetrics": {"temperature": 19.5},
+                    }
+                }
+
+                map_state.update_node_from_num(iface, 42)
+                changed = map_state.update_telemetry_from_packet(
+                    iface,
+                    {
+                        "from": 42,
+                        "decoded": {
+                            "telemetry": {
+                                "deviceMetrics": {"batteryLevel": 70},
+                                "environmentMetrics": {"temperature": 18.0},
+                            }
+                        },
+                    },
+                )
+                self.assertTrue(changed)
+
+                nodes, _traces = store.snapshot("test:telemetry", max_traces=10)
+                self.assertEqual(len(nodes), 1)
+                node = nodes[0]
+                self.assertEqual(node.get("device_telemetry", {}).get("batteryLevel"), 73)
+                self.assertEqual(node.get("device_telemetry", {}).get("voltage"), 3.9)
+                self.assertEqual(node.get("environment_telemetry", {}).get("temperature"), 19.5)
+                self.assertTrue(bool(node.get("device_telemetry_updated_at_utc")))
+                self.assertTrue(bool(node.get("environment_telemetry_updated_at_utc")))
             finally:
                 store.close()
 

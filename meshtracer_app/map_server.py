@@ -1305,6 +1305,72 @@ MAP_HTML = """<!doctype html>
     .trace-action-status.error {
       color: #ffd0dc;
     }
+    .node-detail-tabs {
+      margin-top: 10px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .node-detail-tab-btn {
+      border: 1px solid #2d4065;
+      border-radius: 8px;
+      background: #13264b;
+      color: #d9e4fb;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+      padding: 6px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .node-detail-tab-btn:hover {
+      background: #1b3362;
+    }
+    .node-detail-tab-btn.active {
+      border-color: #6f90c5;
+      background: linear-gradient(180deg, #28467f 0%, #1b3360 100%);
+      color: #f2f7ff;
+      box-shadow: inset 0 0 0 1px rgba(173, 204, 255, 0.35);
+    }
+    .node-tab-panel {
+      margin-top: 6px;
+      border: 1px solid #2a3f64;
+      border-radius: 9px;
+      background: #0d1730;
+      padding: 8px;
+    }
+    .telemetry-updated {
+      color: #9ab0d8;
+      font-size: 11px;
+      line-height: 1.3;
+      margin-bottom: 8px;
+    }
+    .telemetry-empty {
+      color: #b5c5e4;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: minmax(110px, 1fr) minmax(0, 1.4fr);
+      gap: 6px 10px;
+    }
+    .telemetry-key {
+      color: #9ab0d8;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      overflow-wrap: anywhere;
+    }
+    .telemetry-value {
+      color: #d9e4fb;
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      text-align: right;
+    }
     .node-recent-traces {
       margin-top: 10px;
       border: 1px solid #2a3f64;
@@ -1707,6 +1773,7 @@ MAP_HTML = """<!doctype html>
       traceById: new Map(),
       selectedNodeNum: null,
       selectedTraceId: null,
+      selectedNodeDetailsTab: "node_info",
       lastDrawSelectedTraceId: null,
       activeTab: "log",
       nodeSearchQuery: "",
@@ -1718,6 +1785,7 @@ MAP_HTML = """<!doctype html>
       configTokenSet: false,
       configTokenTouched: false,
       queueRemoveBusyIds: new Set(),
+      telemetryRequestState: {},
     };
     const FALLBACK_POLL_MS_CONNECTED = 30000;
     const FALLBACK_POLL_MS_DISCONNECTED = 3000;
@@ -1914,6 +1982,209 @@ MAP_HTML = """<!doctype html>
       const value = Number(epochSec || 0);
       if (!Number.isFinite(value) || value <= 0) return "-";
       return new Date(value * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+    }
+
+    function formatTelemetryKey(keyRaw) {
+      const key = String(keyRaw || "").trim();
+      if (!key) return "";
+      const spaced = key
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/_/g, " ")
+        .trim();
+      return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+    }
+
+    function formatTelemetryValue(value) {
+      if (value === null || value === undefined) return "-";
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) return "-";
+        const rounded = Math.round(value * 1000) / 1000;
+        return Number.isInteger(rounded) ? String(Math.trunc(rounded)) : String(rounded);
+      }
+      if (typeof value === "boolean") return value ? "true" : "false";
+      if (typeof value === "object") {
+        try {
+          return JSON.stringify(value);
+        } catch (_e) {
+          return String(value);
+        }
+      }
+      return String(value);
+    }
+
+    function formatNodeRole(value) {
+      const text = String(value || "").trim();
+      if (!text) return "-";
+      return text.replace(/_/g, " ");
+    }
+
+    function formatNodeFlag(value) {
+      if (value === true) return "Yes";
+      if (value === false) return "No";
+      return "-";
+    }
+
+    function formatNodePublicKey(value) {
+      const text = String(value || "").trim();
+      if (!text) return "-";
+      if (text.length <= 26) return text;
+      return `${text.slice(0, 12)}...${text.slice(-10)}`;
+    }
+
+    function telemetryStatusKey(nodeNum, telemetryType) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      const type = String(telemetryType || "").trim().toLowerCase();
+      return `${nodeNumInt}:${type}`;
+    }
+
+    function telemetryRequestStatus(nodeNum, telemetryType) {
+      const key = telemetryStatusKey(nodeNum, telemetryType);
+      const status = state.telemetryRequestState && state.telemetryRequestState[key];
+      if (!status || typeof status !== "object") return null;
+      return status;
+    }
+
+    function setTelemetryRequestStatus(nodeNum, telemetryType, status) {
+      const key = telemetryStatusKey(nodeNum, telemetryType);
+      if (!state.telemetryRequestState || typeof state.telemetryRequestState !== "object") {
+        state.telemetryRequestState = {};
+      }
+      if (!status) {
+        delete state.telemetryRequestState[key];
+        return;
+      }
+      state.telemetryRequestState[key] = {
+        busy: Boolean(status.busy),
+        error: Boolean(status.error),
+        message: String(status.message || ""),
+      };
+    }
+
+    function nodeDetailsTabValue(rawTab) {
+      const value = String(rawTab || "").trim().toLowerCase();
+      if (value === "device" || value === "environment" || value === "node_info") return value;
+      return "node_info";
+    }
+
+    function nodeDetailsTabLabel(tabValue) {
+      if (tabValue === "device") return "Device";
+      if (tabValue === "environment") return "Environment";
+      return "Node Info";
+    }
+
+    function renderTelemetryRows(telemetry) {
+      if (!telemetry || typeof telemetry !== "object") {
+        return '<div class="telemetry-empty">No telemetry received yet.</div>';
+      }
+      const keys = Object.keys(telemetry).sort((a, b) => a.localeCompare(b));
+      if (!keys.length) {
+        return '<div class="telemetry-empty">No telemetry received yet.</div>';
+      }
+      return `
+        <div class="telemetry-grid">
+          ${keys.map((key) => `
+            <div class="telemetry-key">${escapeHtml(formatTelemetryKey(key))}</div>
+            <div class="telemetry-value">${escapeHtml(formatTelemetryValue(telemetry[key]))}</div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    async function requestNodeTelemetry(nodeNum, telemetryType) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      const type = String(telemetryType || "").trim().toLowerCase();
+      if (!Number.isFinite(nodeNumInt) || !type) return;
+      if (state.selectedNodeNum !== nodeNumInt) return;
+      const statusPrefix = type === "environment" ? "environment" : "device";
+
+      setTelemetryRequestStatus(nodeNumInt, type, {
+        busy: true,
+        error: false,
+        message: `Requesting ${statusPrefix} telemetry...`,
+      });
+      renderSelectionDetails();
+
+      try {
+        const { ok, body } = await apiPost("/api/telemetry/request", {
+          node_num: nodeNumInt,
+          telemetry_type: type,
+        });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : `failed to request ${statusPrefix} telemetry`;
+          setTelemetryRequestStatus(nodeNumInt, type, {
+            busy: false,
+            error: true,
+            message: detail,
+          });
+          renderSelectionDetails();
+          return;
+        }
+        const detail = body && body.detail
+          ? String(body.detail)
+          : `requested ${statusPrefix} telemetry`;
+        setTelemetryRequestStatus(nodeNumInt, type, {
+          busy: false,
+          error: false,
+          message: detail,
+        });
+        renderSelectionDetails();
+      } catch (e) {
+        setTelemetryRequestStatus(nodeNumInt, type, {
+          busy: false,
+          error: true,
+          message: String(e || `failed to request ${statusPrefix} telemetry`),
+        });
+        renderSelectionDetails();
+      }
+    }
+
+    async function requestNodeInfo(nodeNum) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      if (!Number.isFinite(nodeNumInt)) return;
+      if (state.selectedNodeNum !== nodeNumInt) return;
+
+      setTelemetryRequestStatus(nodeNumInt, "node_info", {
+        busy: true,
+        error: false,
+        message: "Requesting node info...",
+      });
+      renderSelectionDetails();
+
+      try {
+        const { ok, body } = await apiPost("/api/nodeinfo/request", {
+          node_num: nodeNumInt,
+        });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to request node info";
+          setTelemetryRequestStatus(nodeNumInt, "node_info", {
+            busy: false,
+            error: true,
+            message: detail,
+          });
+          renderSelectionDetails();
+          return;
+        }
+        const detail = body && body.detail
+          ? String(body.detail)
+          : "requested node info";
+        setTelemetryRequestStatus(nodeNumInt, "node_info", {
+          busy: false,
+          error: false,
+          message: detail,
+        });
+        renderSelectionDetails();
+      } catch (e) {
+        setTelemetryRequestStatus(nodeNumInt, "node_info", {
+          busy: false,
+          error: true,
+          message: String(e || "failed to request node info"),
+        });
+        renderSelectionDetails();
+      }
     }
 
     function numericRevision(value, fallback = 0) {
@@ -3152,6 +3423,7 @@ MAP_HTML = """<!doctype html>
         const isBusyForNode = isRunningForNode || isQueuedForNode;
         const traceDisabled = (!canTraceNow || isBusyForNode) ? "disabled" : "";
         const nodeRecentTraces = recentTracesForNode(selectedNodeNum, 8);
+        const selectedNodeTab = nodeDetailsTabValue(state.selectedNodeDetailsTab);
         const recentTraceSectionHtml = nodeRecentTraces.length
           ? nodeRecentTraces.map((trace) => {
               const traceId = Number(trace.trace_id);
@@ -3178,73 +3450,209 @@ MAP_HTML = """<!doctype html>
             : `Traceroute queued for this node (position ${queueIndex + 1}).`;
         }
 
+        const snrValue = Number(node.snr);
+        const snrText = Number.isFinite(snrValue)
+          ? `${Math.round(snrValue * 100) / 100} dB`
+          : "-";
+        const hopsAwayValue = Number(node.hops_away);
+        const hopsAwayText = Number.isFinite(hopsAwayValue)
+          ? String(Math.trunc(hopsAwayValue))
+          : "-";
+        const channelValue = Number(node.channel);
+        const channelText = Number.isFinite(channelValue)
+          ? String(Math.trunc(channelValue))
+          : "-";
+        const roleText = formatNodeRole(node.role);
+        const viaMqttText = formatNodeFlag(node.via_mqtt);
+        const favoriteText = formatNodeFlag(node.is_favorite);
+        const ignoredText = formatNodeFlag(node.is_ignored);
+        const mutedText = formatNodeFlag(node.is_muted);
+        const keyVerifiedText = formatNodeFlag(node.is_key_manually_verified);
+        const licensedText = formatNodeFlag(node.is_licensed);
+        const unmessagableText = formatNodeFlag(node.is_unmessagable);
+        const publicKeyText = formatNodePublicKey(node.public_key);
+        const publicKeyTitle = String(node.public_key || "").trim();
+
+        const tabItems = ["node_info", "device", "environment"];
+        const tabButtonsHtml = tabItems.map((tabValue) => {
+          const activeClass = selectedNodeTab === tabValue ? "active" : "";
+          return `
+            <button
+              class="node-detail-tab-btn ${activeClass}"
+              type="button"
+              data-node-tab="${escapeHtml(tabValue)}"
+            >${escapeHtml(nodeDetailsTabLabel(tabValue))}</button>
+          `;
+        }).join("");
+
+        let tabBodyHtml = "";
+        if (selectedNodeTab === "node_info") {
+          const nodeInfoRequestStatus = telemetryRequestStatus(selectedNodeNum, "node_info");
+          const nodeInfoRequestBusy = Boolean(nodeInfoRequestStatus && nodeInfoRequestStatus.busy);
+          const nodeInfoRequestMessage = nodeInfoRequestStatus
+            ? String(nodeInfoRequestStatus.message || "")
+            : "";
+          const nodeInfoRequestError = Boolean(nodeInfoRequestStatus && nodeInfoRequestStatus.error);
+          tabBodyHtml = `
+            <span class="trace-meta-row"><span class="trace-label">Long Name</span>${escapeHtml(longName)}</span>
+            <span class="trace-meta-row"><span class="trace-label">ID</span>${escapeHtml(node.id || "-")}</span>
+            <span class="trace-meta-row"><span class="trace-label">Hardware</span>${escapeHtml(node.hw_model || "-")}</span>
+            <span class="trace-meta-row"><span class="trace-label">Role</span>${escapeHtml(roleText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Hops Away</span>${escapeHtml(hopsAwayText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">SNR</span>${escapeHtml(snrText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Channel</span>${escapeHtml(channelText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Via MQTT</span>${escapeHtml(viaMqttText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Favorite</span>${escapeHtml(favoriteText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Ignored</span>${escapeHtml(ignoredText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Muted</span>${escapeHtml(mutedText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Key Verified</span>${escapeHtml(keyVerifiedText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Licensed</span>${escapeHtml(licensedText)}</span>
+            <span class="trace-meta-row"><span class="trace-label">Unmessagable</span>${escapeHtml(unmessagableText)}</span>
+            <span class="trace-meta-row" ${publicKeyTitle ? `title="${escapeHtml(publicKeyTitle)}"` : ""}><span class="trace-label">Public Key</span>${escapeHtml(publicKeyText)}</span>
+            <div class="trace-actions">
+              <button id="requestNodeInfoBtn" class="trace-action-btn" type="button" ${nodeInfoRequestBusy || !canTraceNow ? "disabled" : ""}>
+                ${escapeHtml(nodeInfoRequestBusy ? "Requesting Node Info..." : "Request Node Info")}
+              </button>
+              <span id="requestNodeInfoStatus" class="trace-action-status ${nodeInfoRequestError ? "error" : ""}">
+                ${escapeHtml(nodeInfoRequestMessage || (canTraceNow ? "" : "Connect to a node to request node info."))}
+              </span>
+            </div>
+            <div class="trace-actions">
+              <button id="traceNowBtn" class="trace-action-btn" type="button" ${traceDisabled}>Run traceroute</button>
+              <span id="traceNowStatus" class="trace-action-status">${escapeHtml(traceHint)}</span>
+            </div>
+            <div class="node-recent-traces">
+              <span class="node-recent-title">Recent Traceroutes</span>
+              ${recentTraceSectionHtml}
+            </div>
+          `;
+        } else {
+          const telemetryType = selectedNodeTab === "environment" ? "environment" : "device";
+          const telemetryLabel = telemetryType === "environment" ? "Environment" : "Device";
+          const telemetryButtonLabel = telemetryType === "environment"
+            ? "Request Environment Telemetry"
+            : "Request Device Telemetry";
+          const telemetryData = telemetryType === "environment"
+            ? node.environment_telemetry
+            : node.device_telemetry;
+          const telemetryUpdatedAt = telemetryType === "environment"
+            ? String(node.environment_telemetry_updated_at_utc || "")
+            : String(node.device_telemetry_updated_at_utc || "");
+          const requestStatus = telemetryRequestStatus(selectedNodeNum, telemetryType);
+          const requestBusy = Boolean(requestStatus && requestStatus.busy);
+          const requestMessage = requestStatus ? String(requestStatus.message || "") : "";
+          const requestError = Boolean(requestStatus && requestStatus.error);
+
+          tabBodyHtml = `
+            <div class="trace-actions">
+              <button
+                id="requestTelemetryBtn"
+                class="trace-action-btn"
+                type="button"
+                data-telemetry-type="${escapeHtml(telemetryType)}"
+                ${requestBusy || !canTraceNow ? "disabled" : ""}
+              >${escapeHtml(requestBusy ? `Requesting ${telemetryLabel}...` : telemetryButtonLabel)}</button>
+              <span id="requestTelemetryStatus" class="trace-action-status ${requestError ? "error" : ""}">
+                ${escapeHtml(requestMessage || (canTraceNow ? "" : "Connect to a node to request telemetry."))}
+              </span>
+            </div>
+            <div class="node-tab-panel">
+              <div class="telemetry-updated">Last updated: ${escapeHtml(telemetryUpdatedAt || "-")}</div>
+              ${renderTelemetryRows(telemetryData)}
+            </div>
+          `;
+        }
+
         traceDetailsTitle.textContent = "Node Details";
         traceDetailsBody.innerHTML = `
           <span class="trace-meta-row"><span class="trace-label">Name</span>${escapeHtml(nodeLabel(node))}</span>
-          <span class="trace-meta-row"><span class="trace-label">Long Name</span>${escapeHtml(longName)}</span>
           <span class="trace-meta-row"><span class="trace-label">Node</span>#${escapeHtml(node.num || "?")}</span>
-          <span class="trace-meta-row"><span class="trace-label">ID</span>${escapeHtml(node.id || "-")}</span>
           <span class="trace-meta-row"><span class="trace-label">Last Heard</span>${escapeHtml(prettyAge(node, nowSec))}</span>
           <span class="trace-meta-row"><span class="trace-label">Last Heard UTC</span>${escapeHtml(formatEpochUtc(node.last_heard))}</span>
           <span class="trace-meta-row"><span class="trace-label">Location</span>${escapeHtml(locKind)}</span>
           <span class="trace-meta-row"><span class="trace-label">Lat/Lon</span>${escapeHtml(lat)}, ${escapeHtml(lon)}</span>
-          <div class="trace-actions">
-            <button id="traceNowBtn" class="trace-action-btn" type="button" ${traceDisabled}>Run traceroute</button>
-            <span id="traceNowStatus" class="trace-action-status">${escapeHtml(traceHint)}</span>
+          <div class="node-detail-tabs">
+            ${tabButtonsHtml}
           </div>
-          <div class="node-recent-traces">
-            <span class="node-recent-title">Recent Traceroutes</span>
-            ${recentTraceSectionHtml}
-          </div>
+          ${tabBodyHtml}
         `;
-        const traceNowBtn = document.getElementById("traceNowBtn");
-        const traceNowStatus = document.getElementById("traceNowStatus");
-        for (const btn of traceDetailsBody.querySelectorAll("button[data-recent-trace-id]")) {
-          btn.addEventListener("click", () => {
-            const traceId = Number(btn.dataset.recentTraceId);
-            if (!Number.isFinite(traceId)) return;
-            focusTrace(traceId);
+        for (const tabBtn of traceDetailsBody.querySelectorAll("button[data-node-tab]")) {
+          tabBtn.addEventListener("click", () => {
+            const tabValue = nodeDetailsTabValue(tabBtn.dataset.nodeTab);
+            if (state.selectedNodeDetailsTab === tabValue) return;
+            state.selectedNodeDetailsTab = tabValue;
+            renderSelectionDetails();
           });
         }
-        if (traceNowBtn) {
-          traceNowBtn.addEventListener("click", async () => {
-            const nodeNum = Number(node.num);
-            if (!Number.isFinite(nodeNum)) return;
-            traceNowBtn.disabled = true;
-            let started = false;
-            if (traceNowStatus) {
-              traceNowStatus.textContent = "Starting traceroute...";
-              traceNowStatus.classList.remove("error");
-            }
-            try {
-              const { ok, body } = await apiPost("/api/traceroute", { node_num: nodeNum });
-              if (!ok) {
-                const detail = body && (body.detail || body.error)
-                  ? String(body.detail || body.error)
-                  : "failed to start traceroute";
+
+        if (selectedNodeTab === "node_info") {
+          const traceNowBtn = document.getElementById("traceNowBtn");
+          const traceNowStatus = document.getElementById("traceNowStatus");
+          const requestNodeInfoBtn = document.getElementById("requestNodeInfoBtn");
+          for (const btn of traceDetailsBody.querySelectorAll("button[data-recent-trace-id]")) {
+            btn.addEventListener("click", () => {
+              const traceId = Number(btn.dataset.recentTraceId);
+              if (!Number.isFinite(traceId)) return;
+              focusTrace(traceId);
+            });
+          }
+          if (requestNodeInfoBtn) {
+            requestNodeInfoBtn.addEventListener("click", () => {
+              const nodeNum = Number(node.num);
+              if (!Number.isFinite(nodeNum)) return;
+              requestNodeInfo(nodeNum);
+            });
+          }
+          if (traceNowBtn) {
+            traceNowBtn.addEventListener("click", async () => {
+              const nodeNum = Number(node.num);
+              if (!Number.isFinite(nodeNum)) return;
+              traceNowBtn.disabled = true;
+              let started = false;
+              if (traceNowStatus) {
+                traceNowStatus.textContent = "Starting traceroute...";
+                traceNowStatus.classList.remove("error");
+              }
+              try {
+                const { ok, body } = await apiPost("/api/traceroute", { node_num: nodeNum });
+                if (!ok) {
+                  const detail = body && (body.detail || body.error)
+                    ? String(body.detail || body.error)
+                    : "failed to start traceroute";
+                  if (traceNowStatus) {
+                    traceNowStatus.textContent = detail;
+                    traceNowStatus.classList.add("error");
+                  }
+                  return;
+                }
+                started = true;
+                const detail = body && body.detail ? String(body.detail) : "traceroute queued";
+                if (traceNowStatus) {
+                  traceNowStatus.textContent = detail;
+                  traceNowStatus.classList.remove("error");
+                }
+              } catch (e) {
+                const detail = String(e || "failed to start traceroute");
                 if (traceNowStatus) {
                   traceNowStatus.textContent = detail;
                   traceNowStatus.classList.add("error");
                 }
-                return;
+              } finally {
+                traceNowBtn.disabled = started || !canTraceNow;
               }
-              started = true;
-              const detail = body && body.detail ? String(body.detail) : "traceroute queued";
-              if (traceNowStatus) {
-                traceNowStatus.textContent = detail;
-                traceNowStatus.classList.remove("error");
-              }
-            } catch (e) {
-              const detail = String(e || "failed to start traceroute");
-              if (traceNowStatus) {
-                traceNowStatus.textContent = detail;
-                traceNowStatus.classList.add("error");
-              }
-            } finally {
-              traceNowBtn.disabled = started || !canTraceNow;
-            }
-            refresh();
-          });
+              refresh();
+            });
+          }
+        } else {
+          const requestBtn = document.getElementById("requestTelemetryBtn");
+          if (requestBtn) {
+            requestBtn.addEventListener("click", () => {
+              const nodeNum = Number(node.num);
+              const type = String(requestBtn.dataset.telemetryType || "");
+              if (!Number.isFinite(nodeNum) || !type) return;
+              requestNodeTelemetry(nodeNum, type);
+            });
+          }
         }
         traceDetails.classList.remove("hidden");
         return;
@@ -3336,6 +3744,7 @@ MAP_HTML = """<!doctype html>
       const shouldPanZoom = options.panZoom !== false;
       state.selectedNodeNum = nodeNum;
       state.selectedTraceId = null;
+      state.selectedNodeDetailsTab = "node_info";
       if (options.switchToNodesTab) {
         setActiveTab("nodes");
       }
@@ -4195,6 +4604,8 @@ def start_map_server(
     connect: Callable[[str], tuple[bool, str]],
     disconnect: Callable[[], tuple[bool, str]],
     run_traceroute: Callable[[int], tuple[bool, str]],
+    request_node_telemetry: Callable[[int, str], tuple[bool, str]],
+    request_node_info: Callable[[int], tuple[bool, str]],
     remove_traceroute_queue_entry: Callable[[int], tuple[bool, str]],
     rescan_discovery: Callable[[], tuple[bool, str]],
     get_config: Callable[[], dict[str, Any]],
@@ -4357,6 +4768,41 @@ def start_map_server(
                     self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
                     return
                 ok, detail = run_traceroute(node_num)
+                status = 200 if ok else 400
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
+            if path == "/api/telemetry/request":
+                body, err = self._read_json_body()
+                if err is not None or body is None:
+                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                    return
+                node_num_raw = body.get("node_num")
+                telemetry_type_raw = body.get("telemetry_type")
+                try:
+                    node_num = int(node_num_raw)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
+                    return
+                telemetry_type = str(telemetry_type_raw or "").strip()
+                if not telemetry_type:
+                    self._send_json({"ok": False, "error": "invalid_telemetry_type"}, status=400)
+                    return
+                ok, detail = request_node_telemetry(node_num, telemetry_type)
+                status = 200 if ok else 400
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
+            if path == "/api/nodeinfo/request":
+                body, err = self._read_json_body()
+                if err is not None or body is None:
+                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                    return
+                node_num_raw = body.get("node_num")
+                try:
+                    node_num = int(node_num_raw)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
+                    return
+                ok, detail = request_node_info(node_num)
                 status = 200 if ok else 400
                 self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
                 return

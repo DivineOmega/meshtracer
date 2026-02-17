@@ -540,6 +540,131 @@ class MeshTracerController:
         self._emit(f"[{utc_now()}] Manual traceroute queued for node #{node_num_int}.")
         return True, f"queued traceroute to node #{node_num_int} (position {queue_pos})"
 
+    @staticmethod
+    def _telemetry_type(raw_type: Any) -> tuple[str, str] | None:
+        text = str(raw_type or "").strip().lower().replace("-", "_").replace(" ", "_")
+        mapping = {
+            "device": ("device", "device_metrics"),
+            "device_metrics": ("device", "device_metrics"),
+            "environment": ("environment", "environment_metrics"),
+            "environment_metrics": ("environment", "environment_metrics"),
+        }
+        return mapping.get(text)
+
+    @staticmethod
+    def _telemetry_packet_types(packet: Any) -> list[str]:
+        if not isinstance(packet, dict):
+            return []
+        decoded = packet.get("decoded")
+        telemetry = decoded.get("telemetry") if isinstance(decoded, dict) else None
+        if not isinstance(telemetry, dict):
+            return []
+
+        telemetry_types: list[str] = []
+        if isinstance(telemetry.get("deviceMetrics"), dict) or isinstance(
+            telemetry.get("device_metrics"), dict
+        ):
+            telemetry_types.append("device")
+        if isinstance(telemetry.get("environmentMetrics"), dict) or isinstance(
+            telemetry.get("environment_metrics"), dict
+        ):
+            telemetry_types.append("environment")
+        return telemetry_types
+
+    def request_node_telemetry(self, node_num: Any, telemetry_type: Any) -> tuple[bool, str]:
+        try:
+            node_num_int = int(node_num)
+        except (TypeError, ValueError):
+            return False, "invalid node_num"
+
+        telemetry_details = self._telemetry_type(telemetry_type)
+        if telemetry_details is None:
+            return False, "invalid telemetry_type"
+        telemetry_label, send_type = telemetry_details
+
+        with self._lock:
+            interface = self._interface
+            worker = self._worker_thread
+            connected = self._connection_state == "connected"
+            if not connected or interface is None or worker is None or not worker.is_alive():
+                return False, "not connected"
+        interface_connected = getattr(interface, "isConnected", None)
+        if interface_connected is not None:
+            is_set = getattr(interface_connected, "is_set", None)
+            if callable(is_set):
+                try:
+                    if not bool(is_set()):
+                        return False, "meshtastic interface is reconnecting"
+                except Exception:
+                    pass
+
+        # Use sendData + wantResponse for a non-blocking request path.
+        send_data = getattr(interface, "sendData", None)
+        if not callable(send_data):
+            return False, "telemetry request API unavailable"
+        try:
+            telemetry_pb2_mod = importlib.import_module("meshtastic.protobuf.telemetry_pb2")
+            portnums_pb2_mod = importlib.import_module("meshtastic.protobuf.portnums_pb2")
+            payload = telemetry_pb2_mod.Telemetry()
+            if send_type == "environment_metrics":
+                payload.environment_metrics.CopyFrom(telemetry_pb2_mod.EnvironmentMetrics())
+            else:
+                payload.device_metrics.CopyFrom(telemetry_pb2_mod.DeviceMetrics())
+
+            send_data(
+                payload,
+                destinationId=node_num_int,
+                portNum=portnums_pb2_mod.PortNum.TELEMETRY_APP,
+                wantResponse=True,
+            )
+        except Exception as exc:
+            return False, f"telemetry request failed: {exc}"
+        self._emit(
+            f"[{utc_now()}] Requested {telemetry_label} telemetry from node #{node_num_int}."
+        )
+        return True, f"requested {telemetry_label} telemetry from node #{node_num_int}"
+
+    def request_node_info(self, node_num: Any) -> tuple[bool, str]:
+        try:
+            node_num_int = int(node_num)
+        except (TypeError, ValueError):
+            return False, "invalid node_num"
+
+        with self._lock:
+            interface = self._interface
+            worker = self._worker_thread
+            connected = self._connection_state == "connected"
+            if not connected or interface is None or worker is None or not worker.is_alive():
+                return False, "not connected"
+        interface_connected = getattr(interface, "isConnected", None)
+        if interface_connected is not None:
+            is_set = getattr(interface_connected, "is_set", None)
+            if callable(is_set):
+                try:
+                    if not bool(is_set()):
+                        return False, "meshtastic interface is reconnecting"
+                except Exception:
+                    pass
+
+        send_data = getattr(interface, "sendData", None)
+        if not callable(send_data):
+            return False, "node info request API unavailable"
+        try:
+            mesh_pb2_mod = importlib.import_module("meshtastic.protobuf.mesh_pb2")
+            portnums_pb2_mod = importlib.import_module("meshtastic.protobuf.portnums_pb2")
+            payload = mesh_pb2_mod.User()
+            send_data(
+                payload,
+                destinationId=node_num_int,
+                portNum=portnums_pb2_mod.PortNum.NODEINFO_APP,
+                wantResponse=True,
+            )
+        except Exception as exc:
+            return False, f"node info request failed: {exc}"
+
+        self._emit(f"[{utc_now()}] Requested node info from node #{node_num_int}.")
+        return True, f"requested node info from node #{node_num_int}"
+
     def remove_traceroute_queue_entry(self, queue_id: Any) -> tuple[bool, str]:
         try:
             queue_id_int = int(queue_id)
@@ -860,7 +985,20 @@ class MeshTracerController:
             if interface is not None and interface is not connected_interface:
                 return
             if isinstance(packet, dict):
+                telemetry_types = self._telemetry_packet_types(packet)
                 map_state.update_node_from_num(connected_interface, packet.get("from"))
+                telemetry_updated = map_state.update_telemetry_from_packet(connected_interface, packet)
+                if telemetry_types:
+                    node_label = "?"
+                    try:
+                        node_label = str(int(packet.get("from")))
+                    except (TypeError, ValueError):
+                        pass
+                    suffix = "" if telemetry_updated else " (no data changes)"
+                    self._emit(
+                        f"[{utc_now()}] Received {', '.join(telemetry_types)} telemetry "
+                        f"from node #{node_label}{suffix}."
+                    )
             else:
                 map_state.update_nodes_from_interface(connected_interface)
             self._bump_snapshot_revision()
@@ -1146,6 +1284,8 @@ def main() -> int:
                     controller.connect,
                     controller.disconnect,
                     controller.run_traceroute,
+                    controller.request_node_telemetry,
+                    controller.request_node_info,
                     controller.remove_traceroute_queue_entry,
                     controller.rescan_discovery,
                     controller.get_public_config,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import sqlite3
 from pathlib import Path
 
 from meshtracer_app.storage import SQLiteStore
@@ -87,6 +88,19 @@ class SQLiteStoreTests(unittest.TestCase):
                         "id": "!abc",
                         "long_name": "Full Node",
                         "short_name": "FN",
+                        "hw_model": "HELTEC_V3",
+                        "role": "ROUTER",
+                        "is_licensed": True,
+                        "is_unmessagable": False,
+                        "public_key": "abcdef1234567890abcdef1234567890",
+                        "snr": 7.25,
+                        "hops_away": 2,
+                        "channel": 1,
+                        "via_mqtt": True,
+                        "is_favorite": True,
+                        "is_ignored": False,
+                        "is_muted": False,
+                        "is_key_manually_verified": True,
                         "lat": 45.0,
                         "lon": -122.0,
                         "last_heard": 1000,
@@ -101,9 +115,68 @@ class SQLiteStoreTests(unittest.TestCase):
                 self.assertEqual(node.get("id"), "!abc")
                 self.assertEqual(node.get("long_name"), "Full Node")
                 self.assertEqual(node.get("short_name"), "FN")
+                self.assertEqual(node.get("hw_model"), "HELTEC_V3")
+                self.assertEqual(node.get("role"), "ROUTER")
+                self.assertTrue(node.get("is_licensed"))
+                self.assertFalse(node.get("is_unmessagable"))
+                self.assertEqual(node.get("public_key"), "abcdef1234567890abcdef1234567890")
+                self.assertEqual(node.get("snr"), 7.25)
+                self.assertEqual(node.get("hops_away"), 2)
+                self.assertEqual(node.get("channel"), 1)
+                self.assertTrue(node.get("via_mqtt"))
+                self.assertTrue(node.get("is_favorite"))
+                self.assertFalse(node.get("is_ignored"))
+                self.assertFalse(node.get("is_muted"))
+                self.assertTrue(node.get("is_key_manually_verified"))
                 self.assertEqual(node.get("lat"), 45.0)
                 self.assertEqual(node.get("lon"), -122.0)
                 self.assertEqual(node.get("last_heard"), 1000.0)
+            finally:
+                store.close()
+
+    def test_nodes_table_hw_model_column_migrates_for_existing_db(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+
+            conn = sqlite3.connect(str(db_path))
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS nodes (
+                      mesh_host TEXT NOT NULL,
+                      node_num INTEGER NOT NULL,
+                      node_id TEXT,
+                      long_name TEXT,
+                      short_name TEXT,
+                      lat REAL,
+                      lon REAL,
+                      last_heard REAL,
+                      updated_at_utc TEXT NOT NULL,
+                      PRIMARY KEY (mesh_host, node_num)
+                    );
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            store = SQLiteStore(str(db_path))
+            try:
+                store.upsert_node(
+                    "node:migrate",
+                    {
+                        "num": 55,
+                        "short_name": "MIG",
+                        "hw_model": "T_DECK",
+                        "role": "CLIENT",
+                        "via_mqtt": True,
+                    },
+                )
+                nodes, _traces = store.snapshot("node:migrate", max_traces=10)
+                self.assertEqual(len(nodes), 1)
+                self.assertEqual(nodes[0].get("hw_model"), "T_DECK")
+                self.assertEqual(nodes[0].get("role"), "CLIENT")
+                self.assertTrue(nodes[0].get("via_mqtt"))
             finally:
                 store.close()
 
@@ -121,6 +194,66 @@ class SQLiteStoreTests(unittest.TestCase):
                 self.assertEqual(len(traces_a), 1)
                 self.assertEqual(len(traces_b), 1)
                 self.assertNotEqual(traces_a[0]["trace_id"], traces_b[0]["trace_id"])
+            finally:
+                store.close()
+
+    def test_node_telemetry_persists_and_is_exposed_in_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                store.upsert_node(
+                    "node:telemetry",
+                    {
+                        "num": 321,
+                        "id": "!telemetry",
+                        "long_name": "Telemetry Node",
+                        "short_name": "TEL",
+                    },
+                )
+                self.assertTrue(
+                    store.upsert_node_telemetry(
+                        "node:telemetry",
+                        321,
+                        "device",
+                        {"batteryLevel": 85},
+                    )
+                )
+                self.assertTrue(
+                    store.upsert_node_telemetry(
+                        "node:telemetry",
+                        321,
+                        "device",
+                        {"voltage": 3.93},
+                    )
+                )
+                self.assertTrue(
+                    store.upsert_node_telemetry(
+                        "node:telemetry",
+                        321,
+                        "environment",
+                        {"temperature": 22.5},
+                    )
+                )
+
+                device = store.get_node_telemetry("node:telemetry", 321, "device")
+                environment = store.get_node_telemetry("node:telemetry", 321, "environment")
+                self.assertIsNotNone(device)
+                self.assertIsNotNone(environment)
+                self.assertEqual((device or {}).get("telemetry", {}).get("batteryLevel"), 85)
+                self.assertEqual((device or {}).get("telemetry", {}).get("voltage"), 3.93)
+                self.assertEqual((environment or {}).get("telemetry", {}).get("temperature"), 22.5)
+                self.assertTrue(bool((device or {}).get("updated_at_utc")))
+                self.assertTrue(bool((environment or {}).get("updated_at_utc")))
+
+                nodes, _traces = store.snapshot("node:telemetry", max_traces=10)
+                self.assertEqual(len(nodes), 1)
+                node = nodes[0]
+                self.assertEqual(node.get("device_telemetry", {}).get("batteryLevel"), 85)
+                self.assertEqual(node.get("device_telemetry", {}).get("voltage"), 3.93)
+                self.assertEqual(node.get("environment_telemetry", {}).get("temperature"), 22.5)
+                self.assertTrue(bool(node.get("device_telemetry_updated_at_utc")))
+                self.assertTrue(bool(node.get("environment_telemetry_updated_at_utc")))
             finally:
                 store.close()
 

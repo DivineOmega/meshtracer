@@ -32,13 +32,36 @@ def _node_num_to_id(interface: Any, node_num: int) -> str | None:
     return None
 
 
+def _pick_first(source: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in source:
+            value = source.get(key)
+            if value is not None:
+                return value
+    return None
+
+
 def node_record_from_node(node: dict[str, Any]) -> dict[str, Any]:
     user = node.get("user", {}) or {}
+    hw_model = _pick_first(user, "hwModel", "hw_model")
+    if hw_model is None:
+        hw_model = _pick_first(node, "hwModel", "hw_model")
+
+    role = _pick_first(user, "role")
+    is_licensed = _pick_first(user, "isLicensed", "is_licensed")
+    is_unmessagable = _pick_first(user, "isUnmessagable", "is_unmessagable")
+    public_key = _pick_first(user, "publicKey", "public_key")
+
     return {
         "num": node.get("num"),
         "id": user.get("id") or node.get("id"),
-        "long_name": user.get("longName"),
-        "short_name": user.get("shortName"),
+        "long_name": _pick_first(user, "longName", "long_name"),
+        "short_name": _pick_first(user, "shortName", "short_name"),
+        "hw_model": hw_model,
+        "role": role,
+        "is_licensed": is_licensed,
+        "is_unmessagable": is_unmessagable,
+        "public_key": public_key,
     }
 
 
@@ -84,6 +107,16 @@ def node_summary_from_node(node: dict[str, Any]) -> dict[str, Any]:
     summary["lat"] = lat
     summary["lon"] = lon
     summary["last_heard"] = node.get("lastHeard")
+    summary["snr"] = _pick_first(node, "snr")
+    summary["hops_away"] = _pick_first(node, "hopsAway", "hops_away")
+    summary["channel"] = _pick_first(node, "channel")
+    summary["via_mqtt"] = _pick_first(node, "viaMqtt", "via_mqtt")
+    summary["is_favorite"] = _pick_first(node, "isFavorite", "is_favorite")
+    summary["is_ignored"] = _pick_first(node, "isIgnored", "is_ignored")
+    summary["is_muted"] = _pick_first(node, "isMuted", "is_muted")
+    summary["is_key_manually_verified"] = _pick_first(
+        node, "isKeyManuallyVerified", "is_key_manually_verified"
+    )
     return summary
 
 
