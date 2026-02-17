@@ -22,19 +22,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--interval",
         type=int,
-        default=5,
+        default=None,
         help="Minutes between traceroute attempts (default: 5)",
     )
     parser.add_argument(
         "--heard-window",
         type=int,
-        default=120,
+        default=None,
         help="Only trace nodes heard within this many minutes (default: 120)",
     )
     parser.add_argument(
         "--hop-limit",
         type=int,
-        default=7,
+        default=None,
         help="Hop limit for traceroute packets (default: 7)",
     )
     parser.add_argument(
@@ -84,13 +84,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-map-traces",
         type=int,
-        default=800,
+        default=None,
         help="Max completed traces exposed by /api/map (default: 800)",
     )
     parser.add_argument(
         "--max-stored-traces",
         type=int,
-        default=50000,
+        default=None,
         help="Max completed traces kept per connected node in SQLite (default: 50000, 0 disables pruning)",
     )
     return parser.parse_args()

@@ -148,12 +148,16 @@ class SQLiteStore:
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(mesh_host, node_num) DO UPDATE SET
-                  node_id = excluded.node_id,
-                  long_name = excluded.long_name,
-                  short_name = excluded.short_name,
-                  lat = excluded.lat,
-                  lon = excluded.lon,
-                  last_heard = excluded.last_heard,
+                  node_id = COALESCE(excluded.node_id, nodes.node_id),
+                  long_name = COALESCE(excluded.long_name, nodes.long_name),
+                  short_name = COALESCE(excluded.short_name, nodes.short_name),
+                  lat = COALESCE(excluded.lat, nodes.lat),
+                  lon = COALESCE(excluded.lon, nodes.lon),
+                  last_heard = CASE
+                    WHEN excluded.last_heard IS NULL THEN nodes.last_heard
+                    WHEN nodes.last_heard IS NULL THEN excluded.last_heard
+                    ELSE MAX(excluded.last_heard, nodes.last_heard)
+                  END,
                   updated_at_utc = excluded.updated_at_utc
                 """,
                 rows,

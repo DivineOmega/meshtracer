@@ -155,8 +155,7 @@ class MeshTracerController:
             value = pick_int(key)
             if value is None:
                 continue
-            if value != int(DEFAULT_RUNTIME_CONFIG[key]):
-                update[key] = value
+            update[key] = value
 
         webhook_url = pick_any_str("webhook_url")
         if webhook_url is not None:
@@ -167,6 +166,20 @@ class MeshTracerController:
             update["webhook_api_token"] = webhook_api_token
 
         return update
+
+    @staticmethod
+    def _sanitize_config_for_public(config: dict[str, Any]) -> dict[str, Any]:
+        sanitized = dict(config)
+        token_raw = sanitized.get("webhook_api_token")
+        token_set = False
+        if token_raw is not None:
+            try:
+                token_set = bool(str(token_raw).strip())
+            except Exception:
+                token_set = False
+        sanitized["webhook_api_token"] = None
+        sanitized["webhook_api_token_set"] = token_set
+        return sanitized
 
     @staticmethod
     def _merge_runtime_config(
@@ -267,6 +280,9 @@ class MeshTracerController:
     def get_config(self) -> dict[str, Any]:
         with self._lock:
             return dict(self._config)
+
+    def get_public_config(self) -> dict[str, Any]:
+        return self._sanitize_config_for_public(self.get_config())
 
     def set_config(self, update: dict[str, Any]) -> tuple[bool, str]:
         with self._lock:
@@ -376,7 +392,7 @@ class MeshTracerController:
         payload["connected_host"] = connected_host
         payload["connection_error"] = connection_error
         payload["discovery"] = self._discovery.snapshot()
-        payload["config"] = self.get_config()
+        payload["config"] = self.get_public_config()
         payload["config_defaults"] = deepcopy(DEFAULT_RUNTIME_CONFIG)
         payload["server"] = {
             "db_path": str(getattr(self._args, "db_path", "") or ""),
@@ -594,7 +610,11 @@ class MeshTracerController:
             if interface is not None and interface is not connected_interface:
                 return
             if isinstance(node, dict):
-                map_state.update_node_from_dict(node)
+                node_num = node.get("num")
+                if node_num is not None:
+                    map_state.update_node_from_num(connected_interface, node_num)
+                else:
+                    map_state.update_node_from_dict(node)
             else:
                 map_state.update_nodes_from_interface(connected_interface)
 
@@ -724,13 +744,13 @@ def main() -> int:
         log_buffer.add(message, stream="stderr")
         print(message, file=sys.stderr, flush=True)
 
-    if args.interval <= 0:
+    if args.interval is not None and args.interval <= 0:
         emit_error("--interval must be > 0 minutes")
         return 2
-    if args.heard_window <= 0:
+    if args.heard_window is not None and args.heard_window <= 0:
         emit_error("--heard-window must be > 0 minutes")
         return 2
-    if args.hop_limit <= 0:
+    if args.hop_limit is not None and args.hop_limit <= 0:
         emit_error("--hop-limit must be > 0")
         return 2
     if args.web_ui and not (1 <= args.map_port <= 65535):
@@ -739,17 +759,12 @@ def main() -> int:
     if not args.db_path.strip():
         emit_error("--db-path cannot be empty")
         return 2
-    if args.max_map_traces <= 0:
+    if args.max_map_traces is not None and args.max_map_traces <= 0:
         emit_error("--max-map-traces must be > 0")
         return 2
-    if args.max_stored_traces < 0:
+    if args.max_stored_traces is not None and args.max_stored_traces < 0:
         emit_error("--max-stored-traces must be >= 0")
         return 2
-    if args.webhook_api_token and not args.webhook_url:
-        emit_error(
-            f"[{utc_now()}] Warning: --webhook-api-token was provided without "
-            "--webhook-url; token will be ignored."
-        )
     if not args.web_ui and not args.host:
         emit_error("Missing required host. Usage: python meshtracer.py <NODE_IP> --no-web")
         return 2
@@ -766,6 +781,11 @@ def main() -> int:
             emit=emit,
             emit_error=emit_error,
         )
+        if args.webhook_api_token is not None and not controller.get_config().get("webhook_url"):
+            emit_error(
+                f"[{utc_now()}] Warning: --webhook-api-token was provided without "
+                "an effective webhook URL; token will be ignored."
+            )
 
         if args.web_ui:
             try:
@@ -774,7 +794,7 @@ def main() -> int:
                     controller.connect,
                     controller.disconnect,
                     controller.rescan_discovery,
-                    controller.get_config,
+                    controller.get_public_config,
                     controller.set_config,
                     args.map_host,
                     args.map_port,

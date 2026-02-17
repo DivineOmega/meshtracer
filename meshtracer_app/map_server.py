@@ -1374,6 +1374,8 @@ MAP_HTML = """<!doctype html>
       configLoaded: false,
       configDirty: false,
       configDefaults: null,
+      configTokenSet: false,
+      configTokenTouched: false,
     };
 
     function reportClientError(message, options = {}) {
@@ -2801,7 +2803,7 @@ MAP_HTML = """<!doctype html>
       updateConfigUi(data);
       updateFreshnessLegend(data && data.config);
       const nodeTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "nodes");
-      if (nodeTab) nodeTab.textContent = `Nodes (${String(data.node_count || 0)})`;
+      if (nodeTab) nodeTab.textContent = `Nodes (${String(displayNodes.length)})`;
       const traceTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "traces");
       if (traceTab) traceTab.textContent = `Traces (${String(data.trace_count || 0)})`;
       document.getElementById("updated").textContent = data.generated_at_utc || "-";
@@ -2970,7 +2972,14 @@ MAP_HTML = """<!doctype html>
       if (cfgMaxMapTraces) cfgMaxMapTraces.value = String(config.max_map_traces ?? "");
       if (cfgMaxStoredTraces) cfgMaxStoredTraces.value = String(config.max_stored_traces ?? "");
       if (cfgWebhookUrl) cfgWebhookUrl.value = String(config.webhook_url ?? "");
-      if (cfgWebhookToken) cfgWebhookToken.value = String(config.webhook_api_token ?? "");
+      state.configTokenSet = Boolean(config.webhook_api_token_set);
+      state.configTokenTouched = false;
+      if (cfgWebhookToken) {
+        cfgWebhookToken.value = "";
+        cfgWebhookToken.placeholder = state.configTokenSet
+          ? "Saved token is hidden. Type a new value to replace; leave blank to keep."
+          : "Optional token";
+      }
     }
 
     function updateConfigUi(data) {
@@ -3026,8 +3035,10 @@ MAP_HTML = """<!doctype html>
         max_map_traces: asInt(cfgMaxMapTraces?.value, 800),
         max_stored_traces: asInt(cfgMaxStoredTraces?.value, 50000),
         webhook_url: String(cfgWebhookUrl?.value || "").trim() || null,
-        webhook_api_token: String(cfgWebhookToken?.value || "").trim() || null,
       };
+      if (state.configTokenTouched) {
+        payload.webhook_api_token = String(cfgWebhookToken?.value || "").trim() || null;
+      }
 
       setCfgStatus("Applying...", { error: false });
       if (cfgApply) cfgApply.disabled = true;
@@ -3064,6 +3075,7 @@ MAP_HTML = """<!doctype html>
         max_stored_traces: 50000,
       };
       applyConfigToForm(defaults);
+      state.configTokenTouched = true;
       markConfigDirty();
       setCfgStatus("Reset to defaults (not applied).", { error: false });
     }
@@ -3258,11 +3270,21 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
       cfgMaxMapTraces,
       cfgMaxStoredTraces,
       cfgWebhookUrl,
-      cfgWebhookToken,
     ]) {
       if (!el) continue;
       el.addEventListener("input", () => markConfigDirty());
       el.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          applyConfig();
+        }
+      });
+    }
+    if (cfgWebhookToken) {
+      cfgWebhookToken.addEventListener("input", () => {
+        state.configTokenTouched = true;
+        markConfigDirty();
+      });
+      cfgWebhookToken.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           applyConfig();
         }

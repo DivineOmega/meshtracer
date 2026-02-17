@@ -178,6 +178,8 @@ def parse_traceroute_response(interface: Any, mesh_pb2_mod: Any, packet: dict[st
 
 def pick_recent_node(interface: Any, heard_window_seconds: int) -> tuple[dict[str, Any] | None, float | None, int]:
     now = time.time()
+    # Allow small clock skew but ignore implausibly future timestamps.
+    max_future_skew_seconds = 300.0
     local_num = getattr(getattr(interface, "localNode", None), "nodeNum", None)
     try:
         local_num_int = int(local_num) if local_num is not None else None
@@ -209,6 +211,11 @@ def pick_recent_node(interface: Any, heard_window_seconds: int) -> tuple[dict[st
             age = now - float(last_heard)
         except (TypeError, ValueError):
             continue
+
+        if age < 0:
+            if abs(age) > max_future_skew_seconds:
+                continue
+            age = 0.0
 
         if age <= heard_window_seconds:
             candidates.append((node, age))

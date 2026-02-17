@@ -75,6 +75,38 @@ class SQLiteStoreTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_upsert_nodes_preserves_existing_fields_when_update_is_partial(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                store.upsert_node(
+                    "node:1",
+                    {
+                        "num": 123,
+                        "id": "!abc",
+                        "long_name": "Full Node",
+                        "short_name": "FN",
+                        "lat": 45.0,
+                        "lon": -122.0,
+                        "last_heard": 1000,
+                    },
+                )
+                store.upsert_node("node:1", {"num": 123})
+                store.upsert_node("node:1", {"num": 123, "last_heard": 999})
+
+                nodes, _traces = store.snapshot("node:1", max_traces=10)
+                self.assertEqual(len(nodes), 1)
+                node = nodes[0]
+                self.assertEqual(node.get("id"), "!abc")
+                self.assertEqual(node.get("long_name"), "Full Node")
+                self.assertEqual(node.get("short_name"), "FN")
+                self.assertEqual(node.get("lat"), 45.0)
+                self.assertEqual(node.get("lon"), -122.0)
+                self.assertEqual(node.get("last_heard"), 1000.0)
+            finally:
+                store.close()
+
     def test_snapshot_respects_mesh_host_partition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"

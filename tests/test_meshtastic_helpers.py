@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import unittest
 
 from meshtracer_app.meshtastic_helpers import pick_recent_node, resolve_mesh_partition_key
@@ -22,11 +23,12 @@ class _DummyInterface:
 
 class MeshtasticHelpersTests(unittest.TestCase):
     def test_pick_recent_node_ignores_bad_last_heard_values(self) -> None:
+        now = time.time()
         interface = _DummyInterface(
             {
                 1: {"num": 1, "lastHeard": "not-a-number"},
                 2: {"num": 2, "lastHeard": None},
-                3: {"num": 3, "lastHeard": 99999999999},
+                3: {"num": 3, "lastHeard": now - 60},
             },
             local_num=99,
         )
@@ -39,7 +41,7 @@ class MeshtasticHelpersTests(unittest.TestCase):
         self.assertEqual(count, 1)
 
     def test_pick_recent_node_excludes_local_node(self) -> None:
-        now_like = 99999999999
+        now_like = time.time()
         interface = _DummyInterface(
             {
                 10: {"num": 10, "lastHeard": now_like},
@@ -53,6 +55,23 @@ class MeshtasticHelpersTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertIsNotNone(node)
         self.assertEqual(node.get("num"), 20)
+
+    def test_pick_recent_node_ignores_far_future_and_clamps_small_future_skew(self) -> None:
+        now = time.time()
+        interface = _DummyInterface(
+            {
+                1: {"num": 1, "lastHeard": now + 7200},
+                2: {"num": 2, "lastHeard": now + 120},
+            },
+            local_num=99,
+        )
+
+        node, age, count = pick_recent_node(interface, heard_window_seconds=3600)
+
+        self.assertEqual(count, 1)
+        self.assertIsNotNone(node)
+        self.assertEqual(node.get("num"), 2)
+        self.assertEqual(age, 0.0)
 
     def test_resolve_mesh_partition_key_prefers_local_node_id(self) -> None:
         interface = _DummyInterface({}, local_num=1234, node_id_map={1234: "!abcd1234"})
