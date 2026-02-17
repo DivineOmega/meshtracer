@@ -1390,6 +1390,21 @@ MAP_HTML = """<!doctype html>
     .chat-status.error {
       color: #ffd0dc;
     }
+    .chat-warning {
+      display: none;
+      border: 1px solid rgba(255, 196, 102, 0.48);
+      background: rgba(92, 58, 8, 0.42);
+      color: #ffe2a8;
+      border-radius: 9px;
+      padding: 7px 8px;
+      font-size: 11px;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+      flex: 0 0 auto;
+    }
+    .chat-warning.visible {
+      display: block;
+    }
     .chat-compose {
       display: flex;
       align-items: stretch;
@@ -1746,6 +1761,7 @@ MAP_HTML = """<!doctype html>
         <label class="chat-recipient-label" for="chatRecipient">Recipient</label>
         <select id="chatRecipient"></select>
       </div>
+      <div id="chatRecipientWarning" class="chat-warning"></div>
       <div id="chatMessages"></div>
       <div id="chatStatus" class="chat-status"></div>
       <div class="chat-compose">
@@ -2006,6 +2022,7 @@ MAP_HTML = """<!doctype html>
     const chatOpen = document.getElementById("chatOpen");
     const chatClose = document.getElementById("chatClose");
     const chatRecipient = document.getElementById("chatRecipient");
+    const chatRecipientWarning = document.getElementById("chatRecipientWarning");
     const chatMessages = document.getElementById("chatMessages");
     const chatStatus = document.getElementById("chatStatus");
     const chatInput = document.getElementById("chatInput");
@@ -2307,6 +2324,14 @@ MAP_HTML = """<!doctype html>
       return Math.trunc(parsed);
     }
 
+    function flagIsTrue(value) {
+      if (value === true) return true;
+      if (value === false || value === null || value === undefined) return false;
+      if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+      const text = String(value).trim().toLowerCase();
+      return ["1", "true", "yes", "y", "on"].includes(text);
+    }
+
     function chatPacketHopCount(message) {
       const packet = message && message.packet && typeof message.packet === "object"
         ? message.packet
@@ -2397,6 +2422,20 @@ MAP_HTML = """<!doctype html>
         </optgroup>
       `;
       chatRecipient.value = selectedKey;
+
+      if (chatRecipientWarning) {
+        let warningText = "";
+        const recipientKind = String(state.chatRecipientKind || "").trim().toLowerCase();
+        const recipientId = Math.trunc(Number(state.chatRecipientId) || 0);
+        if (recipientKind === "direct" && recipientId > 0) {
+          const node = state.nodeByNum.get(recipientId);
+          if (node && flagIsTrue(node.is_unmessagable)) {
+            warningText = `${chatNodeLabel(recipientId)} is marked unmessagable. Direct messages may fail.`;
+          }
+        }
+        chatRecipientWarning.textContent = warningText;
+        chatRecipientWarning.classList.toggle("visible", Boolean(warningText));
+      }
 
       const messages = Array.isArray(state.chatMessages) ? state.chatMessages : [];
       if (!messages.length) {
