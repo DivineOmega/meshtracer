@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +9,22 @@ from types import SimpleNamespace
 from meshtracer_app.app import MeshTracerController
 from meshtracer_app.state import RuntimeLogBuffer
 from meshtracer_app.storage import SQLiteStore
+
+
+class _DummyWorker:
+    def is_alive(self) -> bool:
+        return True
+
+
+class _DummyLocalNode:
+    def __init__(self, node_num: int | None) -> None:
+        self.nodeNum = node_num
+
+
+class _DummyInterface:
+    def __init__(self, local_num: int | None = None) -> None:
+        self.localNode = _DummyLocalNode(local_num)
+        self.nodesByNum = {}
 
 
 def _args(**overrides: object) -> SimpleNamespace:
@@ -104,6 +121,135 @@ class ControllerConfigTests(unittest.TestCase):
                 ok, detail = controller.set_config({"interval": 8})
                 self.assertTrue(ok, detail)
                 self.assertEqual(controller.get_config().get("webhook_api_token"), "supersecret")
+            finally:
+                store.close()
+
+    def test_run_traceroute_requires_connected_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                ok, detail = controller.run_traceroute(123)
+                self.assertFalse(ok)
+                self.assertEqual(detail, "not connected")
+            finally:
+                store.close()
+
+    def test_run_traceroute_queues_and_wakes_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                wake_event = threading.Event()
+                with controller._lock:
+                    controller._interface = _DummyInterface(local_num=99)
+                    controller._worker_thread = _DummyWorker()
+                    controller._worker_wake = wake_event
+                    controller._connection_state = "connected"
+
+                ok, detail = controller.run_traceroute(42)
+                self.assertTrue(ok, detail)
+                self.assertEqual(detail, "queued traceroute to node #42 (position 1)")
+                self.assertEqual(controller._manual_target_queue, [42])
+                self.assertTrue(wake_event.is_set())
+            finally:
+                store.close()
+
+    def test_run_traceroute_rejects_local_node(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                with controller._lock:
+                    controller._interface = _DummyInterface(local_num=77)
+                    controller._worker_thread = _DummyWorker()
+                    controller._worker_wake = threading.Event()
+                    controller._connection_state = "connected"
+
+                ok, detail = controller.run_traceroute(77)
+                self.assertFalse(ok)
+                self.assertEqual(detail, "cannot traceroute the local node")
+            finally:
+                store.close()
+
+    def test_run_traceroute_deduplicates_queue_and_running(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                with controller._lock:
+                    controller._interface = _DummyInterface(local_num=77)
+                    controller._worker_thread = _DummyWorker()
+                    controller._worker_wake = threading.Event()
+                    controller._connection_state = "connected"
+
+                ok, detail = controller.run_traceroute(88)
+                self.assertTrue(ok, detail)
+                self.assertEqual(detail, "queued traceroute to node #88 (position 1)")
+
+                ok, detail = controller.run_traceroute(88)
+                self.assertTrue(ok, detail)
+                self.assertEqual(detail, "traceroute already queued for node #88 (position 1)")
+                self.assertEqual(controller._manual_target_queue, [88])
+
+                with controller._lock:
+                    controller._manual_target_queue = []
+                    controller._current_traceroute_node_num = 88
+                ok, detail = controller.run_traceroute(88)
+                self.assertTrue(ok, detail)
+                self.assertEqual(detail, "traceroute already running for node #88")
+            finally:
+                store.close()
+
+    def test_snapshot_includes_traceroute_control_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                with controller._lock:
+                    controller._manual_target_queue = [42, 99]
+                    controller._current_traceroute_node_num = 55
+
+                snap = controller.snapshot()
+                control = snap.get("traceroute_control")
+                self.assertIsInstance(control, dict)
+                self.assertEqual(control.get("running_node_num"), 55)
+                self.assertEqual(control.get("queued_node_nums"), [42, 99])
             finally:
                 store.close()
 

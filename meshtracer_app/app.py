@@ -64,6 +64,9 @@ class MeshTracerController:
 
         self._worker_thread: threading.Thread | None = None
         self._worker_stop: threading.Event | None = None
+        self._worker_wake: threading.Event | None = None
+        self._manual_target_queue: list[int] = []
+        self._current_traceroute_node_num: int | None = None
 
         self._connected_host: str | None = None
         self._connection_state: str = "disconnected"  # disconnected | connecting | connected | error
@@ -354,6 +357,44 @@ class MeshTracerController:
         self._discovery.trigger_scan()
         return True, "scan_triggered"
 
+    def run_traceroute(self, node_num: Any) -> tuple[bool, str]:
+        try:
+            node_num_int = int(node_num)
+        except (TypeError, ValueError):
+            return False, "invalid node_num"
+
+        with self._lock:
+            interface = self._interface
+            worker = self._worker_thread
+            wake_event = self._worker_wake
+            connected = self._connection_state == "connected"
+
+            if not connected or interface is None or worker is None or not worker.is_alive():
+                return False, "not connected"
+
+            local_num = getattr(getattr(interface, "localNode", None), "nodeNum", None)
+            try:
+                local_num_int = int(local_num) if local_num is not None else None
+            except (TypeError, ValueError):
+                local_num_int = None
+            if local_num_int is not None and node_num_int == local_num_int:
+                return False, "cannot traceroute the local node"
+
+            if self._current_traceroute_node_num == node_num_int:
+                return True, f"traceroute already running for node #{node_num_int}"
+
+            if node_num_int in self._manual_target_queue:
+                queue_pos = self._manual_target_queue.index(node_num_int) + 1
+                return True, f"traceroute already queued for node #{node_num_int} (position {queue_pos})"
+
+            self._manual_target_queue.append(node_num_int)
+            queue_pos = len(self._manual_target_queue)
+
+        if wake_event is not None:
+            wake_event.set()
+        self._emit(f"[{utc_now()}] Manual traceroute queued for node #{node_num_int}.")
+        return True, f"queued traceroute to node #{node_num_int} (position {queue_pos})"
+
     def shutdown(self) -> None:
         try:
             self.disconnect()
@@ -370,6 +411,8 @@ class MeshTracerController:
             connection_state = self._connection_state
             connected_host = self._connected_host
             connection_error = self._connection_error
+            running_node_num = self._current_traceroute_node_num
+            queued_node_nums = list(self._manual_target_queue)
 
         if map_state is not None:
             payload = map_state.snapshot()
@@ -398,6 +441,10 @@ class MeshTracerController:
             "db_path": str(getattr(self._args, "db_path", "") or ""),
             "map_host": str(getattr(self._args, "map_host", "") or ""),
             "map_port": int(getattr(self._args, "map_port", 0) or 0),
+        }
+        payload["traceroute_control"] = {
+            "running_node_num": running_node_num,
+            "queued_node_nums": queued_node_nums,
         }
         return payload
 
@@ -514,9 +561,10 @@ class MeshTracerController:
         )
 
         stop_event = threading.Event()
+        wake_event = threading.Event()
         worker = threading.Thread(
             target=self._traceroute_worker,
-            args=(interface, map_state, traceroute_capture, stop_event, host),
+            args=(interface, map_state, traceroute_capture, stop_event, wake_event, host),
             daemon=True,
             name="meshtracer-worker",
         )
@@ -530,6 +578,9 @@ class MeshTracerController:
             self._node_event_subscriptions = subscriptions
             self._worker_thread = worker
             self._worker_stop = stop_event
+            self._worker_wake = wake_event
+            self._manual_target_queue = []
+            self._current_traceroute_node_num = None
             self._connection_state = "connected"
             self._connection_error = None
 
@@ -538,17 +589,21 @@ class MeshTracerController:
     def disconnect(self) -> tuple[bool, str]:
         with self._lock:
             stop_event = self._worker_stop
+            wake_event = self._worker_wake
             worker = self._worker_thread
             pub_bus = self._pub_bus
             subscriptions = list(self._node_event_subscriptions)
             interface = self._interface
 
             self._worker_stop = None
+            self._worker_wake = None
             self._worker_thread = None
             self._pub_bus = None
             self._node_event_subscriptions = []
             self._interface = None
             self._mesh_pb2_mod = None
+            self._manual_target_queue = []
+            self._current_traceroute_node_num = None
 
             # Keep _map_state around so history remains visible when disconnected.
             self._connection_state = "disconnected"
@@ -560,6 +615,8 @@ class MeshTracerController:
 
         if stop_event is not None:
             stop_event.set()
+        if wake_event is not None:
+            wake_event.set()
 
         if pub_bus is not None:
             for listener, topic in subscriptions:
@@ -633,12 +690,44 @@ class MeshTracerController:
 
         return pub_bus, subscriptions
 
+    def _pop_manual_target(self) -> int | None:
+        with self._lock:
+            if not self._manual_target_queue:
+                return None
+            return self._manual_target_queue.pop(0)
+
+    @staticmethod
+    def _target_from_num(interface: Any, node_num: int) -> dict[str, Any]:
+        nodes_by_num = getattr(interface, "nodesByNum", {})
+        if isinstance(nodes_by_num, dict):
+            node = nodes_by_num.get(node_num)
+            if isinstance(node, dict):
+                target = dict(node)
+                target["num"] = node_num
+                return target
+        return {"num": node_num}
+
+    @staticmethod
+    def _node_last_heard_age_seconds(node: dict[str, Any]) -> float | None:
+        try:
+            last_heard = node.get("lastHeard")
+        except Exception:
+            return None
+        if last_heard is None:
+            return None
+        try:
+            age = time.time() - float(last_heard)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, age)
+
     def _traceroute_worker(
         self,
         interface: Any,
         map_state: MapState,
         traceroute_capture: dict[str, Any],
         stop_event: threading.Event,
+        wake_event: threading.Event,
         connected_host: str,
     ) -> None:
         while not stop_event.is_set():
@@ -658,10 +747,17 @@ class MeshTracerController:
             except Exception as exc:
                 self._emit_error(f"[{utc_now()}] Warning: failed to refresh nodes: {exc}")
 
-            target, last_heard_age, candidate_count = pick_recent_node(
-                interface,
-                heard_window_seconds=heard_window_seconds,
-            )
+            manual_node_num = self._pop_manual_target()
+            manual_triggered = manual_node_num is not None
+            if manual_triggered:
+                target = self._target_from_num(interface, int(manual_node_num))
+                last_heard_age = self._node_last_heard_age_seconds(target)
+                candidate_count = 1
+            else:
+                target, last_heard_age, candidate_count = pick_recent_node(
+                    interface,
+                    heard_window_seconds=heard_window_seconds,
+                )
 
             if target is None:
                 self._emit(
@@ -669,17 +765,27 @@ class MeshTracerController:
                     f"{age_str(heard_window_seconds)}."
                 )
             else:
-                self._emit(
-                    f"\n[{utc_now()}] Selected {node_display(target)} "
-                    f"(last heard {age_str(last_heard_age or 0)} ago, "
-                    f"{candidate_count} eligible nodes)."
-                )
+                if manual_triggered:
+                    self._emit(
+                        f"\n[{utc_now()}] Manually selected {node_display(target)} "
+                        f"(requested from UI)."
+                    )
+                else:
+                    self._emit(
+                        f"\n[{utc_now()}] Selected {node_display(target)} "
+                        f"(last heard {age_str(last_heard_age or 0)} ago, "
+                        f"{candidate_count} eligible nodes)."
+                    )
                 self._emit(f"[{utc_now()}] Starting traceroute...")
 
+                target_num: int | None = None
                 try:
+                    target_num = int(target.get("num"))
+                    with self._lock:
+                        self._current_traceroute_node_num = target_num
                     traceroute_capture["result"] = None
                     interface.sendTraceRoute(
-                        dest=target["num"],
+                        dest=target_num,
                         hopLimit=hop_limit,
                     )
                     self._emit(f"[{utc_now()}] Traceroute complete.")
@@ -703,6 +809,7 @@ class MeshTracerController:
                                     float(last_heard_age or 0), 3
                                 ),
                                 "eligible_candidate_count": candidate_count,
+                                "trigger": "manual" if manual_triggered else "scheduled",
                                 "traceroute": traceroute_capture["result"],
                             }
                             delivered, detail = post_webhook(
@@ -718,11 +825,18 @@ class MeshTracerController:
                     if stop_event.is_set():
                         break
                     self._emit_error(f"[{utc_now()}] Traceroute failed: {exc}")
+                finally:
+                    with self._lock:
+                        if target_num is not None and self._current_traceroute_node_num == target_num:
+                            self._current_traceroute_node_num = None
 
             elapsed = time.time() - cycle_start
             sleep_seconds = max(0.0, interval_seconds - elapsed)
             self._emit(f"[{utc_now()}] Waiting {sleep_seconds:.1f}s for next run...")
-            stop_event.wait(sleep_seconds)
+            if stop_event.is_set():
+                break
+            if wake_event.wait(timeout=sleep_seconds):
+                wake_event.clear()
 
 
 def _browser_open_url(map_host: str, map_port: int) -> str:
@@ -793,6 +907,7 @@ def main() -> int:
                     controller.snapshot,
                     controller.connect,
                     controller.disconnect,
+                    controller.run_traceroute,
                     controller.rescan_discovery,
                     controller.get_public_config,
                     controller.set_config,

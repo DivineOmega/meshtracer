@@ -1068,6 +1068,92 @@ MAP_HTML = """<!doctype html>
       white-space: normal;
       word-break: break-word;
     }
+    .trace-actions {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .trace-action-btn {
+      border: 1px solid #2d4065;
+      border-radius: 10px;
+      background: #122145;
+      color: #d9e4fb;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 7px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .trace-action-btn:hover {
+      background: #19305f;
+    }
+    .trace-action-btn:disabled {
+      opacity: 0.62;
+      cursor: not-allowed;
+    }
+    .trace-action-status {
+      color: #b5c5e4;
+      font-size: 11px;
+      line-height: 1.35;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .trace-action-status.error {
+      color: #ffd0dc;
+    }
+    .node-recent-traces {
+      margin-top: 10px;
+      border: 1px solid #2a3f64;
+      border-radius: 9px;
+      background: #0d1730;
+      padding: 8px;
+    }
+    .node-recent-title {
+      display: block;
+      font-size: 11px;
+      color: #9ab0d8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .node-recent-empty {
+      color: #b5c5e4;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .node-recent-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #344c75;
+      border-radius: 8px;
+      background: #122145;
+      color: #d9e4fb;
+      cursor: pointer;
+      padding: 7px 8px;
+      margin-bottom: 6px;
+      box-sizing: border-box;
+    }
+    .node-recent-item:last-child {
+      margin-bottom: 0;
+    }
+    .node-recent-item:hover {
+      background: #19305f;
+    }
+    .node-recent-main {
+      display: block;
+      font-size: 12px;
+      color: #eef5ff;
+      line-height: 1.3;
+    }
+    .node-recent-meta {
+      display: block;
+      font-size: 11px;
+      color: #b5c5e4;
+      line-height: 1.3;
+      margin-top: 2px;
+    }
     @media (max-width: 900px) {
       #sidebar {
         width: min(86vw, 390px);
@@ -2454,6 +2540,35 @@ MAP_HTML = """<!doctype html>
       return count;
     }
 
+    function traceTouchesNode(trace, nodeNum) {
+      const target = Number(nodeNum);
+      if (!Number.isFinite(target)) return false;
+      for (const key of ["towards_nums", "back_nums"]) {
+        const route = Array.isArray(trace?.[key]) ? trace[key] : [];
+        for (const rawNum of route) {
+          if (Number(rawNum) === target) return true;
+        }
+      }
+      for (const packetKey of ["from", "to"]) {
+        const num = Number(trace?.packet?.[packetKey]?.num);
+        if (Number.isFinite(num) && num === target) return true;
+      }
+      return false;
+    }
+
+    function recentTracesForNode(nodeNum, limit = 6) {
+      const maxItems = Math.max(1, Number(limit) || 6);
+      const traces = Array.isArray(state.lastData?.traces) ? state.lastData.traces : [];
+      const matches = [];
+      for (let i = traces.length - 1; i >= 0; i -= 1) {
+        const trace = traces[i];
+        if (!traceTouchesNode(trace, nodeNum)) continue;
+        matches.push(trace);
+        if (matches.length >= maxItems) break;
+      }
+      return matches;
+    }
+
     function selectedTraceNodeNums() {
       if (state.selectedTraceId === null) return null;
       const trace = state.traceById.get(state.selectedTraceId);
@@ -2539,6 +2654,52 @@ MAP_HTML = """<!doctype html>
         const lat = hasPos ? node.lat.toFixed(5) : "-";
         const lon = hasPos ? node.lon.toFixed(5) : "-";
         const longName = node.long_name && String(node.long_name).trim() ? node.long_name : "Unknown node";
+        const canTraceNow = Boolean(state.lastServerData && state.lastServerData.connected);
+        const selectedNodeNum = Number(node.num);
+        const tracerouteControl = state.lastServerData && typeof state.lastServerData.traceroute_control === "object"
+          ? state.lastServerData.traceroute_control
+          : {};
+        const runningNodeNumRaw = tracerouteControl.running_node_num;
+        const runningNodeNum = runningNodeNumRaw === null || runningNodeNumRaw === undefined
+          ? NaN
+          : Number(runningNodeNumRaw);
+        const queuedNodeNums = Array.isArray(tracerouteControl.queued_node_nums)
+          ? tracerouteControl.queued_node_nums
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value))
+          : [];
+        const queueIndex = Number.isFinite(selectedNodeNum) ? queuedNodeNums.indexOf(selectedNodeNum) : -1;
+        const isRunningForNode = Number.isFinite(runningNodeNum) && runningNodeNum === selectedNodeNum;
+        const isQueuedForNode = queueIndex >= 0;
+        const isBusyForNode = isRunningForNode || isQueuedForNode;
+        const traceDisabled = (!canTraceNow || isBusyForNode) ? "disabled" : "";
+        const nodeRecentTraces = recentTracesForNode(selectedNodeNum, 8);
+        const recentTraceSectionHtml = nodeRecentTraces.length
+          ? nodeRecentTraces.map((trace) => {
+              const traceId = Number(trace.trace_id);
+              const originLabel = nodeFromRecord(trace?.packet?.to);
+              const targetLabel = nodeFromRecord(trace?.packet?.from);
+              const fwdHops = Math.max(0, (trace.towards_nums || []).length - 1);
+              const backHops = Math.max(0, (trace.back_nums || []).length - 1);
+              return `
+                <button class="node-recent-item" type="button" data-recent-trace-id="${traceId}">
+                  <span class="node-recent-main">#${escapeHtml(traceId)} ${escapeHtml(originLabel)} -> ${escapeHtml(targetLabel)}</span>
+                  <span class="node-recent-meta">${escapeHtml(trace.captured_at_utc || "-")} | towards ${escapeHtml(fwdHops)} hops | back ${escapeHtml(backHops)} hops</span>
+                </button>
+              `;
+            }).join("")
+          : '<div class="node-recent-empty">No completed traceroutes for this node yet.</div>';
+        let traceHint = "";
+        if (!canTraceNow) {
+          traceHint = "Connect to a node to run traceroute.";
+        } else if (isRunningForNode) {
+          traceHint = "Traceroute running for this node...";
+        } else if (isQueuedForNode) {
+          traceHint = queueIndex === 0
+            ? "Traceroute queued for this node."
+            : `Traceroute queued for this node (position ${queueIndex + 1}).`;
+        }
 
         traceDetailsTitle.textContent = "Node Details";
         traceDetailsBody.innerHTML = `
@@ -2550,7 +2711,64 @@ MAP_HTML = """<!doctype html>
           <span class="trace-meta-row"><span class="trace-label">Last Heard UTC</span>${escapeHtml(formatEpochUtc(node.last_heard))}</span>
           <span class="trace-meta-row"><span class="trace-label">Location</span>${escapeHtml(locKind)}</span>
           <span class="trace-meta-row"><span class="trace-label">Lat/Lon</span>${escapeHtml(lat)}, ${escapeHtml(lon)}</span>
+          <div class="trace-actions">
+            <button id="traceNowBtn" class="trace-action-btn" type="button" ${traceDisabled}>Run traceroute</button>
+            <span id="traceNowStatus" class="trace-action-status">${escapeHtml(traceHint)}</span>
+          </div>
+          <div class="node-recent-traces">
+            <span class="node-recent-title">Recent Traceroutes</span>
+            ${recentTraceSectionHtml}
+          </div>
         `;
+        const traceNowBtn = document.getElementById("traceNowBtn");
+        const traceNowStatus = document.getElementById("traceNowStatus");
+        for (const btn of traceDetailsBody.querySelectorAll("button[data-recent-trace-id]")) {
+          btn.addEventListener("click", () => {
+            const traceId = Number(btn.dataset.recentTraceId);
+            if (!Number.isFinite(traceId)) return;
+            focusTrace(traceId);
+          });
+        }
+        if (traceNowBtn) {
+          traceNowBtn.addEventListener("click", async () => {
+            const nodeNum = Number(node.num);
+            if (!Number.isFinite(nodeNum)) return;
+            traceNowBtn.disabled = true;
+            let started = false;
+            if (traceNowStatus) {
+              traceNowStatus.textContent = "Starting traceroute...";
+              traceNowStatus.classList.remove("error");
+            }
+            try {
+              const { ok, body } = await apiPost("/api/traceroute", { node_num: nodeNum });
+              if (!ok) {
+                const detail = body && (body.detail || body.error)
+                  ? String(body.detail || body.error)
+                  : "failed to start traceroute";
+                if (traceNowStatus) {
+                  traceNowStatus.textContent = detail;
+                  traceNowStatus.classList.add("error");
+                }
+                return;
+              }
+              started = true;
+              const detail = body && body.detail ? String(body.detail) : "traceroute queued";
+              if (traceNowStatus) {
+                traceNowStatus.textContent = detail;
+                traceNowStatus.classList.remove("error");
+              }
+            } catch (e) {
+              const detail = String(e || "failed to start traceroute");
+              if (traceNowStatus) {
+                traceNowStatus.textContent = detail;
+                traceNowStatus.classList.add("error");
+              }
+            } finally {
+              traceNowBtn.disabled = started || !canTraceNow;
+            }
+            refresh();
+          });
+        }
         traceDetails.classList.remove("hidden");
         return;
       }
@@ -3322,6 +3540,7 @@ def start_map_server(
     snapshot: Callable[[], dict[str, Any]],
     connect: Callable[[str], tuple[bool, str]],
     disconnect: Callable[[], tuple[bool, str]],
+    run_traceroute: Callable[[int], tuple[bool, str]],
     rescan_discovery: Callable[[], tuple[bool, str]],
     get_config: Callable[[], dict[str, Any]],
     set_config: Callable[[dict[str, Any]], tuple[bool, str]],
@@ -3420,6 +3639,21 @@ def start_map_server(
             if path == "/api/disconnect":
                 ok, detail = disconnect()
                 status = 200 if ok else 500
+                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+                return
+            if path == "/api/traceroute":
+                body, err = self._read_json_body()
+                if err is not None or body is None:
+                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                    return
+                node_num_raw = body.get("node_num")
+                try:
+                    node_num = int(node_num_raw)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
+                    return
+                ok, detail = run_traceroute(node_num)
+                status = 200 if ok else 400
                 self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
                 return
             if path == "/api/discovery/rescan":
