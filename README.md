@@ -4,38 +4,10 @@ Meshtracer connects to a Meshtastic node over TCP (WiFi/Ethernet), stores mesh h
 
 Default web UI address: `http://127.0.0.1:8090/`
 
-## Capabilities
-
-- Connect/disconnect to a Meshtastic TCP node from UI or CLI startup host.
-- Best-effort LAN discovery for Meshtastic TCP targets (default port `4403`).
-- Continuous traceroute worker with configurable behavior:
-  - `automatic`: periodic random eligible-node traceroutes.
-  - `manual`: runs only queued traceroutes.
-- Per-node traceroute queue with dedupe, queue-position reporting, and removal.
-- Live map with node markers, inferred edges, trace highlighting, and node/trace drill-down.
-- Node details view with tabs:
-  - `Node Info`
-  - `Traceroutes`
-  - `Position`
-  - `Telemetry` (nested `Device`, `Environment`, and `Power` tabs)
-- Node actions from node details:
-  - `Request Node Info`
-  - `Run Traceroute`
-  - `Request Position`
-  - `Request Device/Environment/Power Telemetry`
-  - Person button to open direct chat to selected node.
-- Chat UI:
-  - Channel + direct recipients.
-  - Channel labels from interface channel metadata when available (including modem-preset style names such as `LongFast` for primary channel); fallback labels are used when unavailable.
-  - Clickable sender node labels to jump to node details.
-  - Repeated identical message text is supported.
-- Runtime config modal with persisted settings.
-- Optional webhook POST on completed traceroutes with parsed route payload.
-- Realtime updates over SSE with polling fallback.
-
-## Requirements
+## Quick Requirements
 
 - Python `3.10+`
+- `git`
 - Meshtastic node reachable by IP/hostname over TCP.
 - Python dependencies from `requirements.txt` (currently pins `meshtastic==2.7.7`).
 
@@ -77,13 +49,36 @@ Host UI on LAN and auto-connect to a Meshtastic node:
 source .venv/bin/activate && python meshtracer.py <NODE_IP_OR_HOST> --map-host 0.0.0.0 --map-port 8090 --no-open
 ```
 
-Terminal-only mode (no web UI; host required):
-
-```bash
-source .venv/bin/activate && python meshtracer.py <NODE_IP_OR_HOST> --no-web
-```
-
 Stop with `Ctrl+C`.
+
+## Capabilities
+
+- Connect/disconnect to a Meshtastic TCP node from UI or CLI startup host.
+- Best-effort LAN discovery for Meshtastic TCP targets (default port `4403`).
+- Continuous traceroute worker with configurable behavior:
+  - `automatic`: periodic random eligible-node traceroutes.
+  - `manual`: runs only queued traceroutes.
+- Per-node traceroute queue with dedupe, queue-position reporting, and removal.
+- Live map with node markers, inferred edges, trace highlighting, and node/trace drill-down.
+- Node details view with tabs:
+  - `Node Info`
+  - `Traceroutes`
+  - `Position`
+  - `Telemetry` (nested `Device`, `Environment`, and `Power` tabs)
+- Node actions from node details:
+  - `Request Node Info`
+  - `Run Traceroute`
+  - `Request Position`
+  - `Request Device/Environment/Power Telemetry`
+  - Person button to open direct chat to selected node.
+- Chat UI:
+  - Channel + direct recipients.
+  - Channel labels from interface channel metadata when available (including modem-preset style names such as `LongFast` for primary channel); fallback labels are used when unavailable.
+  - Clickable sender node labels to jump to node details.
+  - Repeated identical message text is supported.
+- Runtime config modal with persisted settings.
+- Optional webhook POST on completed traceroutes with parsed route payload.
+- Realtime updates over SSE with polling fallback.
 
 ## CLI Reference
 
