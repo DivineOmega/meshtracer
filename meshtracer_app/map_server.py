@@ -38,6 +38,29 @@ def start_map_server(
     port: int,
 ) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
+        _GET_ROUTES: dict[str, str] = {
+            "/": "_handle_get_root",
+            "/map": "_handle_get_root",
+            "/api/map": "_handle_get_api_map",
+            "/api/events": "_handle_get_api_events",
+            "/api/config": "_handle_get_api_config",
+            "/api/chat/messages": "_handle_get_api_chat_messages",
+            "/healthz": "_handle_get_healthz",
+        }
+        _POST_ROUTES: dict[str, str] = {
+            "/api/config": "_handle_post_config",
+            "/api/connect": "_handle_post_connect",
+            "/api/disconnect": "_handle_post_disconnect",
+            "/api/traceroute": "_handle_post_traceroute",
+            "/api/chat/send": "_handle_post_chat_send",
+            "/api/telemetry/request": "_handle_post_telemetry_request",
+            "/api/nodeinfo/request": "_handle_post_nodeinfo_request",
+            "/api/position/request": "_handle_post_position_request",
+            "/api/database/reset": "_handle_post_database_reset",
+            "/api/traceroute/queue/remove": "_handle_post_traceroute_queue_remove",
+            "/api/discovery/rescan": "_handle_post_discovery_rescan",
+        }
+
         def log_message(self, fmt: str, *args: Any) -> None:
             return
 
@@ -121,222 +144,243 @@ def start_map_server(
                 cursor = max(cursor, payload_revision)
                 self._send_sse(event="snapshot", payload=payload, event_id=cursor)
 
+        def _resolve_handler_name(self, routes: dict[str, str], path: str) -> str | None:
+            handler_name = routes.get(path)
+            if not handler_name:
+                return None
+            handler = getattr(self, handler_name, None)
+            if not callable(handler):
+                return None
+            return handler_name
+
+        def _send_not_found(self) -> None:
+            self._send_json({"error": "not_found"}, status=404)
+
+        def _handle_get_root(self, _url: Any) -> None:
+            served = self._send_static_asset("index.html")
+            if not served:
+                self._send_json({"error": "static_asset_unavailable", "asset": "index.html"}, status=500)
+
+        def _handle_get_api_map(self, _url: Any) -> None:
+            self._send_json(snapshot())
+
+        def _handle_get_api_events(self, url: Any) -> None:
+            query = parse_qs(url.query, keep_blank_values=False)
+            since_raw = query.get("since", [0])[0]
+            try:
+                since = int(since_raw)
+            except (TypeError, ValueError):
+                since = 0
+            try:
+                self._serve_events(since)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                return
+
+        def _handle_get_api_config(self, _url: Any) -> None:
+            self._send_json({"ok": True, "config": get_config()})
+
+        def _handle_get_api_chat_messages(self, url: Any) -> None:
+            query = parse_qs(url.query, keep_blank_values=False)
+            recipient_kind = str(query.get("recipient_kind", ["channel"])[0] or "").strip().lower()
+            recipient_id_raw = query.get("recipient_id", [0])[0]
+            limit_raw = query.get("limit", [300])[0]
+            try:
+                recipient_id = int(recipient_id_raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "invalid_recipient_id"}, status=400)
+                return
+            try:
+                limit = int(limit_raw)
+            except (TypeError, ValueError):
+                limit = 300
+            ok, detail, messages, revision = get_chat_messages(recipient_kind, recipient_id, limit)
+            status = 200 if ok else 400
+            self._send_json(
+                {
+                    "ok": ok,
+                    "detail": detail,
+                    "recipient_kind": recipient_kind,
+                    "recipient_id": recipient_id,
+                    "messages": messages,
+                    "chat_revision": int(revision),
+                },
+                status=status,
+            )
+
+        def _handle_get_healthz(self, _url: Any) -> None:
+            self._send_json({"ok": True, "at_utc": utc_now()})
+
+        def _handle_post_config(self) -> None:
+            body, err = self._read_json_body()
+            if err is not None or body is None:
+                self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                return
+            ok, detail = set_config(body)
+            status = 200 if ok else 400
+            self._send_json(
+                {
+                    "ok": ok,
+                    "detail": detail,
+                    "config": get_config(),
+                    "snapshot": snapshot(),
+                },
+                status=status,
+            )
+
+        def _handle_post_connect(self) -> None:
+            body, err = self._read_json_body()
+            if err is not None or body is None:
+                self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                return
+            host_value = body.get("host")
+            host = str(host_value or "").strip()
+            if not host:
+                self._send_json({"ok": False, "error": "missing_host"}, status=400)
+                return
+            ok, detail = connect(host)
+            status = 200 if ok else 500
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_disconnect(self) -> None:
+            ok, detail = disconnect()
+            status = 200 if ok else 500
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_traceroute(self) -> None:
+            body, err = self._read_json_body()
+            if err is not None or body is None:
+                self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                return
+            node_num_raw = body.get("node_num")
+            try:
+                node_num = int(node_num_raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
+                return
+            ok, detail = run_traceroute(node_num)
+            status = 200 if ok else 400
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_chat_send(self) -> None:
+            body, err = self._read_json_body()
+            if err is not None or body is None:
+                self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                return
+
+            recipient_kind = str(body.get("recipient_kind") or "").strip().lower()
+            recipient_id_raw = body.get("recipient_id")
+            text = str(body.get("text") or "")
+            try:
+                recipient_id = int(recipient_id_raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "invalid_recipient_id"}, status=400)
+                return
+
+            ok, detail = send_chat_message(recipient_kind, recipient_id, text)
+            status = 200 if ok else 400
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_telemetry_request(self) -> None:
+            body, err = self._read_json_body()
+            if err is not None or body is None:
+                self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                return
+            node_num_raw = body.get("node_num")
+            telemetry_type_raw = body.get("telemetry_type")
+            try:
+                node_num = int(node_num_raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
+                return
+            telemetry_type = str(telemetry_type_raw or "").strip()
+            if not telemetry_type:
+                self._send_json({"ok": False, "error": "invalid_telemetry_type"}, status=400)
+                return
+            ok, detail = request_node_telemetry(node_num, telemetry_type)
+            status = 200 if ok else 400
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_nodeinfo_request(self) -> None:
+            body, err = self._read_json_body()
+            if err is not None or body is None:
+                self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                return
+            node_num_raw = body.get("node_num")
+            try:
+                node_num = int(node_num_raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
+                return
+            ok, detail = request_node_info(node_num)
+            status = 200 if ok else 400
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_position_request(self) -> None:
+            body, err = self._read_json_body()
+            if err is not None or body is None:
+                self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                return
+            node_num_raw = body.get("node_num")
+            try:
+                node_num = int(node_num_raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
+                return
+            ok, detail = request_node_position(node_num)
+            status = 200 if ok else 400
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_database_reset(self) -> None:
+            ok, detail = reset_database()
+            status = 200 if ok else 500
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_traceroute_queue_remove(self) -> None:
+            body, err = self._read_json_body()
+            if err is not None or body is None:
+                self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
+                return
+            queue_id_raw = body.get("queue_id")
+            try:
+                queue_id = int(queue_id_raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "invalid_queue_id"}, status=400)
+                return
+            ok, detail = remove_traceroute_queue_entry(queue_id)
+            status = 200 if ok else 400
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
+        def _handle_post_discovery_rescan(self) -> None:
+            ok, detail = rescan_discovery()
+            status = 200 if ok else 500
+            self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
+
         def do_GET(self) -> None:
             url = urlsplit(self.path)
             path = url.path
-            if path in ("/", "/map"):
-                served = self._send_static_asset("index.html")
-                if not served:
-                    self._send_json({"error": "static_asset_unavailable", "asset": "index.html"}, status=500)
-                return
             if path.startswith("/static/"):
                 asset_name = path[len("/static/") :]
                 if not asset_name or "/" in asset_name or asset_name in (".", ".."):
-                    self._send_json({"error": "not_found"}, status=404)
+                    self._send_not_found()
                     return
                 if self._send_static_asset(asset_name):
                     return
-                self._send_json({"error": "not_found"}, status=404)
+                self._send_not_found()
                 return
-            if path == "/api/map":
-                self._send_json(snapshot())
+
+            handler_name = self._resolve_handler_name(self._GET_ROUTES, path)
+            if handler_name is None:
+                self._send_not_found()
                 return
-            if path == "/api/events":
-                query = parse_qs(url.query, keep_blank_values=False)
-                since_raw = query.get("since", [0])[0]
-                try:
-                    since = int(since_raw)
-                except (TypeError, ValueError):
-                    since = 0
-                try:
-                    self._serve_events(since)
-                except (BrokenPipeError, ConnectionResetError, OSError):
-                    return
-                return
-            if path == "/api/config":
-                self._send_json({"ok": True, "config": get_config()})
-                return
-            if path == "/api/chat/messages":
-                query = parse_qs(url.query, keep_blank_values=False)
-                recipient_kind = str(query.get("recipient_kind", ["channel"])[0] or "").strip().lower()
-                recipient_id_raw = query.get("recipient_id", [0])[0]
-                limit_raw = query.get("limit", [300])[0]
-                try:
-                    recipient_id = int(recipient_id_raw)
-                except (TypeError, ValueError):
-                    self._send_json({"ok": False, "error": "invalid_recipient_id"}, status=400)
-                    return
-                try:
-                    limit = int(limit_raw)
-                except (TypeError, ValueError):
-                    limit = 300
-                ok, detail, messages, revision = get_chat_messages(recipient_kind, recipient_id, limit)
-                status = 200 if ok else 400
-                self._send_json(
-                    {
-                        "ok": ok,
-                        "detail": detail,
-                        "recipient_kind": recipient_kind,
-                        "recipient_id": recipient_id,
-                        "messages": messages,
-                        "chat_revision": int(revision),
-                    },
-                    status=status,
-                )
-                return
-            if path == "/healthz":
-                self._send_json({"ok": True, "at_utc": utc_now()})
-                return
-            self._send_json({"error": "not_found"}, status=404)
+            getattr(self, handler_name)(url)
 
         def do_POST(self) -> None:
-            path = self.path.split("?", 1)[0]
-            if path == "/api/config":
-                body, err = self._read_json_body()
-                if err is not None or body is None:
-                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
-                    return
-                ok, detail = set_config(body)
-                status = 200 if ok else 400
-                self._send_json(
-                    {
-                        "ok": ok,
-                        "detail": detail,
-                        "config": get_config(),
-                        "snapshot": snapshot(),
-                    },
-                    status=status,
-                )
+            path = urlsplit(self.path).path
+            handler_name = self._resolve_handler_name(self._POST_ROUTES, path)
+            if handler_name is None:
+                self._send_not_found()
                 return
-            if path == "/api/connect":
-                body, err = self._read_json_body()
-                if err is not None or body is None:
-                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
-                    return
-                host_value = body.get("host")
-                host = str(host_value or "").strip()
-                if not host:
-                    self._send_json({"ok": False, "error": "missing_host"}, status=400)
-                    return
-                ok, detail = connect(host)
-                status = 200 if ok else 500
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/disconnect":
-                ok, detail = disconnect()
-                status = 200 if ok else 500
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/traceroute":
-                body, err = self._read_json_body()
-                if err is not None or body is None:
-                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
-                    return
-                node_num_raw = body.get("node_num")
-                try:
-                    node_num = int(node_num_raw)
-                except (TypeError, ValueError):
-                    self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
-                    return
-                ok, detail = run_traceroute(node_num)
-                status = 200 if ok else 400
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/chat/send":
-                body, err = self._read_json_body()
-                if err is not None or body is None:
-                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
-                    return
-
-                recipient_kind = str(body.get("recipient_kind") or "").strip().lower()
-                recipient_id_raw = body.get("recipient_id")
-                text = str(body.get("text") or "")
-                try:
-                    recipient_id = int(recipient_id_raw)
-                except (TypeError, ValueError):
-                    self._send_json({"ok": False, "error": "invalid_recipient_id"}, status=400)
-                    return
-
-                ok, detail = send_chat_message(recipient_kind, recipient_id, text)
-                status = 200 if ok else 400
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/telemetry/request":
-                body, err = self._read_json_body()
-                if err is not None or body is None:
-                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
-                    return
-                node_num_raw = body.get("node_num")
-                telemetry_type_raw = body.get("telemetry_type")
-                try:
-                    node_num = int(node_num_raw)
-                except (TypeError, ValueError):
-                    self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
-                    return
-                telemetry_type = str(telemetry_type_raw or "").strip()
-                if not telemetry_type:
-                    self._send_json({"ok": False, "error": "invalid_telemetry_type"}, status=400)
-                    return
-                ok, detail = request_node_telemetry(node_num, telemetry_type)
-                status = 200 if ok else 400
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/nodeinfo/request":
-                body, err = self._read_json_body()
-                if err is not None or body is None:
-                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
-                    return
-                node_num_raw = body.get("node_num")
-                try:
-                    node_num = int(node_num_raw)
-                except (TypeError, ValueError):
-                    self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
-                    return
-                ok, detail = request_node_info(node_num)
-                status = 200 if ok else 400
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/position/request":
-                body, err = self._read_json_body()
-                if err is not None or body is None:
-                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
-                    return
-                node_num_raw = body.get("node_num")
-                try:
-                    node_num = int(node_num_raw)
-                except (TypeError, ValueError):
-                    self._send_json({"ok": False, "error": "invalid_node_num"}, status=400)
-                    return
-                ok, detail = request_node_position(node_num)
-                status = 200 if ok else 400
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/database/reset":
-                ok, detail = reset_database()
-                status = 200 if ok else 500
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/traceroute/queue/remove":
-                body, err = self._read_json_body()
-                if err is not None or body is None:
-                    self._send_json({"ok": False, "error": err or "bad_request"}, status=400)
-                    return
-                queue_id_raw = body.get("queue_id")
-                try:
-                    queue_id = int(queue_id_raw)
-                except (TypeError, ValueError):
-                    self._send_json({"ok": False, "error": "invalid_queue_id"}, status=400)
-                    return
-                ok, detail = remove_traceroute_queue_entry(queue_id)
-                status = 200 if ok else 400
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            if path == "/api/discovery/rescan":
-                ok, detail = rescan_discovery()
-                status = 200 if ok else 500
-                self._send_json({"ok": ok, "detail": detail, "snapshot": snapshot()}, status=status)
-                return
-            self._send_json({"error": "not_found"}, status=404)
+            getattr(self, handler_name)()
 
     server = ThreadingHTTPServer((host, port), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
