@@ -1,0 +1,3849 @@
+    const map = L.map("map", { zoomControl: false }).setView([20, 0], 2);
+    L.control.zoom({ position: "bottomleft" }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+    const markerLayer = L.layerGroup().addTo(map);
+    const edgeLayer = L.layerGroup().addTo(map);
+    const spiderLayer = L.layerGroup().addTo(map);
+
+    const sidebar = document.getElementById("sidebar");
+    const sidebarResize = document.getElementById("sidebarResize");
+    const sidebarToggle = document.getElementById("sidebarToggle");
+    const traceDetails = document.getElementById("traceDetails");
+    const traceDetailsTitle = document.getElementById("traceDetailsTitle");
+    const traceDetailsBody = document.getElementById("traceDetailsBody");
+    const traceDetailsNodeChat = document.getElementById("traceDetailsNodeChat");
+    const traceDetailsClose = document.getElementById("traceDetailsClose");
+    const chatModal = document.getElementById("chatModal");
+    const chatOpen = document.getElementById("chatOpen");
+    const chatClose = document.getElementById("chatClose");
+    const chatRecipient = document.getElementById("chatRecipient");
+    const chatRecipientWarning = document.getElementById("chatRecipientWarning");
+    const chatMessages = document.getElementById("chatMessages");
+    const chatStatus = document.getElementById("chatStatus");
+    const chatInput = document.getElementById("chatInput");
+    const chatSend = document.getElementById("chatSend");
+    const manageTraceQueueBtn = document.getElementById("manageTraceQueueBtn");
+    const nodeSearchInput = document.getElementById("nodeSearch");
+    const nodeSortSelect = document.getElementById("nodeSort");
+    const legendFreshText = document.getElementById("legendFreshText");
+    const legendMidText = document.getElementById("legendMidText");
+    const legendStaleText = document.getElementById("legendStaleText");
+    const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
+    const tabPanels = Array.from(document.querySelectorAll(".panel"));
+    const onboarding = document.getElementById("onboarding");
+    const connectHostInput = document.getElementById("connectHost");
+    const connectBtn = document.getElementById("connectBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+    const connectError = document.getElementById("connectError");
+    const connectStatus = document.getElementById("connectStatus");
+    const discoverySection = document.getElementById("discoverySection");
+    const discoveryRescan = document.getElementById("discoveryRescan");
+    const discoveryMeta = document.getElementById("discoveryMeta");
+    const discoveryList = document.getElementById("discoveryList");
+    const cfgTracerouteBehavior = document.getElementById("cfgTracerouteBehavior");
+    const cfgInterval = document.getElementById("cfgInterval");
+    const cfgHeardWindow = document.getElementById("cfgHeardWindow");
+    const cfgFreshWindow = document.getElementById("cfgFreshWindow");
+    const cfgMidWindow = document.getElementById("cfgMidWindow");
+    const cfgHopLimit = document.getElementById("cfgHopLimit");
+    const cfgTracerouteRetentionHours = document.getElementById("cfgTracerouteRetentionHours");
+    const cfgWebhookUrl = document.getElementById("cfgWebhookUrl");
+    const cfgWebhookToken = document.getElementById("cfgWebhookToken");
+    const cfgApply = document.getElementById("cfgApply");
+    const cfgReset = document.getElementById("cfgReset");
+    const cfgResetDatabase = document.getElementById("cfgResetDatabase");
+    const cfgStatus = document.getElementById("cfgStatus");
+    const cfgDbPath = document.getElementById("cfgDbPath");
+    const cfgUiBind = document.getElementById("cfgUiBind");
+    const configModal = document.getElementById("configModal");
+    const configOverlay = document.getElementById("configOverlay");
+    const configClose = document.getElementById("configClose");
+    const configOpen = document.getElementById("configOpen");
+    const helpModal = document.getElementById("helpModal");
+    const helpOverlay = document.getElementById("helpOverlay");
+    const helpClose = document.getElementById("helpClose");
+    const helpTitle = document.getElementById("helpTitle");
+    const helpBody = document.getElementById("helpBody");
+    const queueModal = document.getElementById("queueModal");
+    const queueOverlay = document.getElementById("queueOverlay");
+    const queueClose = document.getElementById("queueClose");
+    const queueSummary = document.getElementById("queueSummary");
+    const queueStatus = document.getElementById("queueStatus");
+    const queueList = document.getElementById("queueList");
+    const clientError = document.getElementById("clientError");
+
+    const state = {
+      fitted: false,
+      lastServerData: null,
+      lastData: null,
+      lastSnapshotRevision: 0,
+      lastMapRevision: 0,
+      lastMapStyleSignature: "",
+      lastLogRevision: 0,
+      refreshInFlight: false,
+      sseConnected: false,
+      lastSseEventAtMs: 0,
+      sseSource: null,
+      markerByNum: new Map(),
+      edgePolylinesByTrace: new Map(),
+      nodeByNum: new Map(),
+      traceById: new Map(),
+      selectedNodeNum: null,
+      selectedTraceId: null,
+      selectedNodeDetailsTab: "node_info",
+      selectedNodeTelemetryTab: "device",
+      lastDrawSelectedTraceId: null,
+      spiderGroups: new Map(),
+      activeSpiderGroupKey: null,
+      activeTab: "log",
+      nodeSearchQuery: "",
+      nodeSortMode: "last_heard",
+      promptedConnect: false,
+      configLoaded: false,
+      configDirty: false,
+      configDefaults: null,
+      configTokenSet: false,
+      configTokenTouched: false,
+      queueRemoveBusyIds: new Set(),
+      telemetryRequestState: {},
+      chatOpen: false,
+      chatRecipientKind: "channel",
+      chatRecipientId: 0,
+      chatMessages: [],
+      chatLoading: false,
+      chatSendBusy: false,
+      chatLoadedKey: "",
+      lastChatRevision: 0,
+      chatStatusMessage: "",
+      chatStatusError: false,
+    };
+    const FALLBACK_POLL_MS_CONNECTED = 30000;
+    const FALLBACK_POLL_MS_DISCONNECTED = 3000;
+
+    function reportClientError(message, options = {}) {
+      const text = String(message || "").trim();
+      if (!text) return;
+      const prefix = options.prefix ? String(options.prefix) : "UI error";
+      const line = `${prefix}: ${text}`;
+      try {
+        console.error(line);
+      } catch (_e) {
+      }
+      if (!clientError) return;
+      clientError.textContent = line;
+      clientError.classList.add("visible");
+    }
+
+    window.addEventListener("error", (event) => {
+      const msg = event && (event.message || (event.error && event.error.message)) ? String(event.message || event.error.message) : "unknown error";
+      reportClientError(msg, { prefix: "UI error" });
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      const reason = event && event.reason ? event.reason : null;
+      const msg = reason && reason.message ? String(reason.message) : String(reason || "unhandled promise rejection");
+      reportClientError(msg, { prefix: "UI error" });
+    });
+    const ROUTE_COLORS = {
+      towards: "#f59e0b",
+      back: "#3b82f6",
+    };
+    const ROUTE_SELECTED_COLORS = {
+      towards: "#ffd27a",
+      back: "#7fb5ff",
+    };
+    const ROUTE_OFFSET_MIN_METERS = 20;
+    const ROUTE_OFFSET_MAX_METERS = 320;
+    const ROUTE_OFFSET_SCALE = 0.055;
+    const ROUTE_OFFSET_JITTER_SCALE = 0.06;
+    const ROUTE_OFFSET_TAPER_MIN_METERS = 35;
+    const ROUTE_OFFSET_TAPER_MAX_METERS = 240;
+    const ROUTE_OFFSET_TAPER_RATIO = 0.22;
+    const NODE_FOCUS_MIN_ZOOM = 16;
+    const TRACE_FOCUS_MAX_ZOOM = 16;
+    const SPIDERFY_RADIUS_MIN_PX = 20;
+    const SPIDERFY_RADIUS_STEP_PX = 2.6;
+    const SPIDERFY_RADIUS_MAX_PX = 46;
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"]/g, (c) => {
+        if (c === "&") return "&amp;";
+        if (c === "<") return "&lt;";
+        if (c === ">") return "&gt;";
+        return "&quot;";
+      });
+    }
+
+    function chatRevisionFromData(data) {
+      return numericRevision(data && data.chat && data.chat.revision, 0);
+    }
+
+    function chatChannelsFromData(data) {
+      const channelsRaw = Array.isArray(data && data.chat && data.chat.channels)
+        ? data.chat.channels
+        : [];
+      const channels = [];
+      for (const raw of channelsRaw) {
+        const value = Number(raw);
+        if (!Number.isFinite(value)) continue;
+        const idx = Math.trunc(value);
+        if (idx < 0) continue;
+        if (!channels.includes(idx)) channels.push(idx);
+      }
+      if (!channels.length) channels.push(0);
+      channels.sort((a, b) => a - b);
+      return channels;
+    }
+
+    function chatChannelNamesFromData(data) {
+      const namesRaw = data && data.chat && data.chat.channel_names;
+      if (!namesRaw || typeof namesRaw !== "object") {
+        return {};
+      }
+      const names = {};
+      for (const [rawIndex, rawName] of Object.entries(namesRaw)) {
+        const indexValue = Number(rawIndex);
+        if (!Number.isFinite(indexValue)) continue;
+        const channelIndex = Math.trunc(indexValue);
+        if (channelIndex < 0) continue;
+        const channelName = String(rawName || "").trim();
+        if (!channelName) continue;
+        names[channelIndex] = channelName;
+      }
+      return names;
+    }
+
+    function chatChannelLabel(channelIndex, channelNames = {}) {
+      const idx = Math.trunc(Number(channelIndex) || 0);
+      const name = channelNames && typeof channelNames === "object"
+        ? String(channelNames[idx] || "").trim()
+        : "";
+      if (name) return name;
+      if (idx === 0) return "Primary";
+      return `Channel ${idx}`;
+    }
+
+    function chatRecentDirectNodesFromData(data) {
+      const recentRaw = Array.isArray(data && data.chat && data.chat.recent_direct_node_nums)
+        ? data.chat.recent_direct_node_nums
+        : [];
+      const recent = [];
+      for (const raw of recentRaw) {
+        const value = Number(raw);
+        if (!Number.isFinite(value)) continue;
+        const nodeNum = Math.trunc(value);
+        if (recent.includes(nodeNum)) continue;
+        recent.push(nodeNum);
+      }
+      return recent;
+    }
+
+    function chatRecipientKey(kind, id) {
+      return `${String(kind || "").trim().toLowerCase()}:${Math.trunc(Number(id) || 0)}`;
+    }
+
+    function allKnownNodeNums(data) {
+      const nodes = Array.isArray(data && data.nodes) ? data.nodes : [];
+      const nums = [];
+      for (const node of nodes) {
+        const value = Number(node && node.num);
+        if (!Number.isFinite(value)) continue;
+        const nodeNum = Math.trunc(value);
+        if (!nums.includes(nodeNum)) nums.push(nodeNum);
+      }
+      return nums;
+    }
+
+    function normalizeChatRecipient(data, options = {}) {
+      const channels = chatChannelsFromData(data);
+      const recentDirect = chatRecentDirectNodesFromData(data);
+      const nodeNums = allKnownNodeNums(data);
+
+      const preferNodeNumValue = Number(options.nodeNum);
+      if (Number.isFinite(preferNodeNumValue)) {
+        state.chatRecipientKind = "direct";
+        state.chatRecipientId = Math.trunc(preferNodeNumValue);
+      }
+
+      const currentKind = String(state.chatRecipientKind || "").trim().toLowerCase();
+      const currentId = Math.trunc(Number(state.chatRecipientId) || 0);
+      let nextKind = currentKind;
+      let nextId = currentId;
+
+      if (currentKind === "channel") {
+        if (!channels.includes(currentId)) {
+          nextId = channels[0];
+        }
+      } else if (currentKind === "direct") {
+        const validDirect = recentDirect.includes(currentId) || nodeNums.includes(currentId);
+        if (!validDirect) {
+          nextKind = "channel";
+          nextId = channels[0];
+        }
+      } else {
+        nextKind = "channel";
+        nextId = channels[0];
+      }
+
+      state.chatRecipientKind = nextKind;
+      state.chatRecipientId = nextId;
+
+      const recentSet = new Set(recentDirect);
+      const otherDirect = nodeNums.filter((nodeNum) => !recentSet.has(nodeNum));
+
+      if (state.chatRecipientKind === "direct" && !recentSet.has(state.chatRecipientId) && !otherDirect.includes(state.chatRecipientId)) {
+        recentDirect.unshift(state.chatRecipientId);
+      }
+
+      return { channels, recentDirect, otherDirect };
+    }
+
+    function chatNodeLabel(nodeNum) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      const fallback = `Node #${nodeNumInt}`;
+      if (!Number.isFinite(nodeNumInt)) return "Node";
+      const node = state.nodeByNum.get(nodeNumInt);
+      if (!node) return fallback;
+      const short = nodeLabel(node);
+      const longName = node.long_name && String(node.long_name).trim()
+        ? String(node.long_name).trim()
+        : "";
+      if (!longName || longName.toLowerCase() === short.toLowerCase()) {
+        return `${short} (#${nodeNumInt})`;
+      }
+      return `${short} / ${longName} (#${nodeNumInt})`;
+    }
+
+    function intOrNull(value) {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return null;
+      return Math.trunc(parsed);
+    }
+
+    function flagIsTrue(value) {
+      if (value === true) return true;
+      if (value === false || value === null || value === undefined) return false;
+      if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+      const text = String(value).trim().toLowerCase();
+      return ["1", "true", "yes", "y", "on"].includes(text);
+    }
+
+    function chatPacketHopCount(message) {
+      const packet = message && message.packet && typeof message.packet === "object"
+        ? message.packet
+        : null;
+      if (!packet) return null;
+
+      const hopsAway = intOrNull(packet.hopsAway ?? packet.hops_away);
+      if (hopsAway !== null && hopsAway >= 0) return hopsAway;
+      return null;
+    }
+
+    function chatMetaText(message) {
+      const created = String(message && message.created_at_utc ? message.created_at_utc : "").trim();
+      const hopCount = chatPacketHopCount(message);
+      const hopText = hopCount === null
+        ? ""
+        : ` | ${hopCount} hop${hopCount === 1 ? "" : "s"}`;
+      if (!created) {
+        return hopText ? `-${hopText}` : "-";
+      }
+      return `${created}${hopText}`;
+    }
+
+    function setChatStatus(message, options = {}) {
+      state.chatStatusMessage = String(message || "").trim();
+      state.chatStatusError = Boolean(options.error);
+      if (!chatStatus) return;
+      chatStatus.textContent = state.chatStatusMessage;
+      chatStatus.classList.toggle("error", state.chatStatusError);
+    }
+
+    function positionChatModal() {
+      if (!chatModal || chatModal.classList.contains("hidden")) return;
+      let top = 12;
+      if (traceDetails && !traceDetails.classList.contains("hidden")) {
+        const detailsRect = traceDetails.getBoundingClientRect();
+        if (Number.isFinite(detailsRect.bottom) && detailsRect.bottom > 0) {
+          top = Math.max(top, Math.round(detailsRect.bottom + 10));
+        }
+      }
+      const maxTop = Math.max(12, window.innerHeight - 200);
+      top = Math.min(top, maxTop);
+      chatModal.style.top = `${top}px`;
+      const maxHeight = Math.max(180, window.innerHeight - top - 12);
+      chatModal.style.maxHeight = `${maxHeight}px`;
+    }
+
+    function renderChatPanel(data = state.lastServerData) {
+      if (!chatModal || !chatRecipient || !chatMessages || !chatInput || !chatSend) return;
+      if (!state.chatOpen) {
+        chatModal.classList.add("hidden");
+        return;
+      }
+      chatModal.classList.remove("hidden");
+      positionChatModal();
+
+      const recipients = normalizeChatRecipient(data);
+      const selectedKey = chatRecipientKey(state.chatRecipientKind, state.chatRecipientId);
+      const channelNames = chatChannelNamesFromData(data);
+
+      const channelsOptionsHtml = recipients.channels.map((channelIndex) => {
+        const value = chatRecipientKey("channel", channelIndex);
+        const selectedAttr = selectedKey === value ? "selected" : "";
+        return `<option value="${escapeHtml(value)}" ${selectedAttr}>${escapeHtml(chatChannelLabel(channelIndex, channelNames))}</option>`;
+      }).join("");
+
+      const recentOptionsHtml = recipients.recentDirect.map((nodeNum) => {
+        const value = chatRecipientKey("direct", nodeNum);
+        const selectedAttr = selectedKey === value ? "selected" : "";
+        return `<option value="${escapeHtml(value)}" ${selectedAttr}>${escapeHtml(chatNodeLabel(nodeNum))}</option>`;
+      }).join("");
+
+      const otherOptionsHtml = recipients.otherDirect.map((nodeNum) => {
+        const value = chatRecipientKey("direct", nodeNum);
+        const selectedAttr = selectedKey === value ? "selected" : "";
+        return `<option value="${escapeHtml(value)}" ${selectedAttr}>${escapeHtml(chatNodeLabel(nodeNum))}</option>`;
+      }).join("");
+
+      chatRecipient.innerHTML = `
+        <optgroup label="Channels">
+          ${channelsOptionsHtml}
+        </optgroup>
+        <optgroup label="Recently Messaged Nodes">
+          ${recentOptionsHtml || `<option disabled>(none)</option>`}
+        </optgroup>
+        <optgroup label="Other Nodes">
+          ${otherOptionsHtml || `<option disabled>(none)</option>`}
+        </optgroup>
+      `;
+      chatRecipient.value = selectedKey;
+
+      if (chatRecipientWarning) {
+        let warningText = "";
+        const recipientKind = String(state.chatRecipientKind || "").trim().toLowerCase();
+        const recipientId = Math.trunc(Number(state.chatRecipientId) || 0);
+        if (recipientKind === "direct" && recipientId > 0) {
+          const node = state.nodeByNum.get(recipientId);
+          if (node && flagIsTrue(node.is_unmessagable)) {
+            warningText = `${chatNodeLabel(recipientId)} is marked unmessagable. Direct messages may fail.`;
+          }
+        }
+        chatRecipientWarning.textContent = warningText;
+        chatRecipientWarning.classList.toggle("visible", Boolean(warningText));
+      }
+
+      const messages = Array.isArray(state.chatMessages) ? state.chatMessages : [];
+      if (!messages.length) {
+        chatMessages.innerHTML = '<div class="chat-empty">No messages yet for this recipient.</div>';
+      } else {
+        chatMessages.innerHTML = messages.map((message) => {
+          const direction = String(message && message.direction || "").trim().toLowerCase() === "outgoing"
+            ? "outgoing"
+            : "incoming";
+          const text = String(message && message.text || "");
+          const fromNodeNum = Number(message && message.from_node_num);
+          const senderNodeNum = Number.isFinite(fromNodeNum) ? Math.trunc(fromNodeNum) : null;
+          const senderLabel = senderNodeNum !== null
+            ? chatNodeLabel(senderNodeNum)
+            : "Node";
+          const senderHtml = direction === "outgoing"
+            ? "You"
+            : senderNodeNum !== null
+              ? `<button type="button" class="chat-node-link" data-chat-node-num="${senderNodeNum}" title="Open node details">${escapeHtml(senderLabel)}</button>`
+              : escapeHtml(senderLabel);
+          const createdAtText = escapeHtml(chatMetaText(message));
+          return `
+            <div class="chat-row ${direction}">
+              <div class="chat-bubble">${escapeHtml(text)}</div>
+              <div class="chat-meta">${senderHtml} | ${createdAtText}</div>
+            </div>
+          `;
+        }).join("");
+      }
+      for (const nodeBtn of chatMessages.querySelectorAll("button[data-chat-node-num]")) {
+        nodeBtn.addEventListener("click", () => {
+          const nodeNum = Number(nodeBtn.dataset.chatNodeNum);
+          if (!Number.isFinite(nodeNum)) return;
+          focusNode(Math.trunc(nodeNum), {
+            switchToNodesTab: true,
+            scrollNodeListIntoView: true,
+          });
+        });
+      }
+
+      const connected = Boolean(data && data.connected);
+      chatSend.disabled = state.chatSendBusy || !connected;
+      chatInput.disabled = !connected;
+      if (!connected && !state.chatStatusMessage) {
+        setChatStatus("Connect to a node to send messages.", { error: false });
+      }
+      if (chatStatus) {
+        chatStatus.textContent = state.chatStatusMessage;
+        chatStatus.classList.toggle("error", state.chatStatusError);
+      }
+
+      if (state.chatLoading) {
+        setChatStatus("Loading messages...", { error: false });
+      }
+    }
+
+    async function loadChatMessages(options = {}) {
+      if (!state.chatOpen) return;
+      if (state.chatLoading) return;
+      const force = Boolean(options.force);
+      const recipientKind = String(state.chatRecipientKind || "").trim().toLowerCase();
+      const recipientId = Math.trunc(Number(state.chatRecipientId) || 0);
+      if (recipientKind !== "channel" && recipientKind !== "direct") return;
+
+      const data = state.lastServerData;
+      const currentRevision = chatRevisionFromData(data);
+      const loadKey = chatRecipientKey(recipientKind, recipientId);
+      if (!force && state.chatLoadedKey === loadKey && state.lastChatRevision === currentRevision) {
+        return;
+      }
+
+      state.chatLoading = true;
+      renderChatPanel(data);
+      try {
+        const query = new URLSearchParams({
+          recipient_kind: recipientKind,
+          recipient_id: String(recipientId),
+          limit: "400",
+        });
+        const response = await fetch(`/api/chat/messages?${query.toString()}`, { cache: "no-store" });
+        let body = null;
+        try {
+          body = await response.json();
+        } catch (_e) {
+        }
+        if (!response.ok || !body || body.ok === false) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to load messages";
+          setChatStatus(detail, { error: true });
+          return;
+        }
+        state.chatMessages = Array.isArray(body.messages) ? body.messages : [];
+        state.chatLoadedKey = loadKey;
+        setChatStatus("", { error: false });
+      } catch (e) {
+        setChatStatus(String(e || "failed to load messages"), { error: true });
+      } finally {
+        state.chatLoading = false;
+        renderChatPanel(data);
+        try {
+          if (chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          }
+        } catch (_e) {
+        }
+      }
+    }
+
+    async function sendChatMessage() {
+      if (state.chatSendBusy) return;
+      const inputValue = String(chatInput && chatInput.value || "");
+      const text = inputValue.trim();
+      if (!text) return;
+      const recipientKind = String(state.chatRecipientKind || "").trim().toLowerCase();
+      const recipientId = Math.trunc(Number(state.chatRecipientId) || 0);
+      if (recipientKind !== "channel" && recipientKind !== "direct") return;
+
+      state.chatSendBusy = true;
+      setChatStatus("Sending message...", { error: false });
+      renderChatPanel(state.lastServerData);
+      try {
+        const { ok, body } = await apiPost("/api/chat/send", {
+          recipient_kind: recipientKind,
+          recipient_id: recipientId,
+          text,
+        });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to send message";
+          setChatStatus(detail, { error: true });
+          return;
+        }
+        if (chatInput && String(chatInput.value || "") === inputValue) {
+          chatInput.value = "";
+        }
+        setChatStatus("Message sent.", { error: false });
+        if (body && body.snapshot && typeof body.snapshot === "object") {
+          applySnapshot(body.snapshot, { force: true });
+        } else {
+          await refresh({ force: true });
+        }
+      } catch (e) {
+        setChatStatus(String(e || "failed to send message"), { error: true });
+      } finally {
+        state.chatSendBusy = false;
+        renderChatPanel(state.lastServerData);
+      }
+    }
+
+    function openChat(options = {}) {
+      const nodeNumValue = Number(options.nodeNum);
+      if (Number.isFinite(nodeNumValue)) {
+        state.chatRecipientKind = "direct";
+        state.chatRecipientId = Math.trunc(nodeNumValue);
+      }
+      state.chatOpen = true;
+      setChatStatus("", { error: false });
+      renderChatPanel(state.lastServerData);
+      loadChatMessages({ force: true });
+      try {
+        if (chatInput) chatInput.focus();
+      } catch (_e) {
+      }
+    }
+
+    function closeChat() {
+      state.chatOpen = false;
+      renderChatPanel(state.lastServerData);
+      try {
+        if (chatOpen) chatOpen.focus();
+      } catch (_e) {
+      }
+    }
+
+    function setActiveTab(tabName) {
+      state.activeTab = tabName;
+      for (const btn of tabButtons) {
+        btn.classList.toggle("active", btn.dataset.tab === tabName);
+      }
+      for (const panel of tabPanels) {
+        panel.classList.toggle("active", panel.dataset.panel === tabName);
+      }
+    }
+
+    for (const btn of tabButtons) {
+      btn.addEventListener("click", () => setActiveTab(btn.dataset.tab || "log"));
+    }
+
+    sidebarToggle.addEventListener("click", () => {
+      const collapsed = sidebar.classList.toggle("collapsed");
+      sidebarToggle.textContent = collapsed ? "<" : ">";
+      sidebarToggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+      setTimeout(() => map.invalidateSize(), 180);
+    });
+
+    let resizing = false;
+    let resizeStartX = 0;
+    let resizeStartWidth = 0;
+    sidebarResize.addEventListener("mousedown", (event) => {
+      if (sidebar.classList.contains("collapsed")) return;
+      resizing = true;
+      resizeStartX = event.clientX;
+      resizeStartWidth = sidebar.getBoundingClientRect().width;
+      document.body.classList.add("sidebar-resizing");
+      event.preventDefault();
+    });
+    window.addEventListener("mousemove", (event) => {
+      if (!resizing) return;
+      const delta = resizeStartX - event.clientX;
+      const maxWidth = Math.max(320, window.innerWidth - 60);
+      const width = Math.max(280, Math.min(maxWidth, resizeStartWidth + delta));
+      sidebar.style.width = `${width}px`;
+      map.invalidateSize(false);
+    });
+    window.addEventListener("mouseup", () => {
+      if (!resizing) return;
+      resizing = false;
+      document.body.classList.remove("sidebar-resizing");
+    });
+
+    traceDetailsClose.addEventListener("click", () => {
+      clearSelection();
+    });
+    if (traceDetailsNodeChat) {
+      traceDetailsNodeChat.addEventListener("click", () => {
+        const nodeNum = Number(state.selectedNodeNum);
+        if (!Number.isFinite(nodeNum)) return;
+        openChat({ nodeNum });
+      });
+    }
+    map.on("click", () => {
+      collapseSpiderGroup();
+    });
+    map.on("zoomstart", () => {
+      collapseSpiderGroup({ skipSelectionVisual: true });
+    });
+    map.on("movestart", () => {
+      collapseSpiderGroup({ skipSelectionVisual: true });
+    });
+    nodeSearchInput.addEventListener("input", () => {
+      state.nodeSearchQuery = String(nodeSearchInput.value || "");
+      if (state.lastData) {
+        renderNodeList(state.lastData.nodes || []);
+      }
+    });
+    nodeSortSelect.addEventListener("change", () => {
+      state.nodeSortMode = String(nodeSortSelect.value || "last_heard");
+      if (state.lastData) {
+        renderNodeList(state.lastData.nodes || []);
+      }
+    });
+    if (chatRecipient) {
+      chatRecipient.addEventListener("change", () => {
+        const value = String(chatRecipient.value || "");
+        const parts = value.split(":");
+        const kind = String(parts[0] || "").trim().toLowerCase();
+        const idValue = Number(parts[1]);
+        if ((kind !== "channel" && kind !== "direct") || !Number.isFinite(idValue)) {
+          return;
+        }
+        state.chatRecipientKind = kind;
+        state.chatRecipientId = Math.trunc(idValue);
+        state.chatMessages = [];
+        state.chatLoadedKey = "";
+        renderChatPanel(state.lastServerData);
+        loadChatMessages({ force: true });
+      });
+    }
+    if (chatSend) {
+      chatSend.addEventListener("click", () => {
+        sendChatMessage();
+      });
+    }
+    if (chatInput) {
+      chatInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        sendChatMessage();
+      });
+    }
+    if (chatOpen) {
+      chatOpen.addEventListener("click", () => {
+        if (state.chatOpen) {
+          closeChat();
+        } else {
+          openChat();
+        }
+      });
+    }
+    if (chatClose) {
+      chatClose.addEventListener("click", () => closeChat());
+    }
+    window.addEventListener("resize", () => {
+      positionChatModal();
+    });
+
+    function nodeLabel(node) {
+      function trimLabel(value) {
+        const text = String(value || "").trim();
+        if (text.length <= 8) return text;
+        return text.slice(0, 8);
+      }
+      if (node.short_name && String(node.short_name).trim()) {
+        return trimLabel(node.short_name);
+      }
+      if (node.id && String(node.id).trim()) {
+        return trimLabel(String(node.id).replace("!", ""));
+      }
+      const shortFallback = shortNameFromNodeNum(node.num);
+      if (shortFallback) return trimLabel(shortFallback);
+      return trimLabel(String(node.num || "NODE"));
+    }
+
+    function clampFreshnessThresholds(config) {
+      const cfg = config && typeof config === "object" ? config : {};
+      const defaults = state.configDefaults && typeof state.configDefaults === "object"
+        ? state.configDefaults
+        : { fresh_window: 120, mid_window: 480 };
+
+      function asInt(value, fallback) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.trunc(n);
+      }
+
+      let fresh = asInt(cfg.fresh_window ?? defaults.fresh_window, 120);
+      let mid = asInt(cfg.mid_window ?? defaults.mid_window, 480);
+      fresh = Math.max(1, fresh);
+      mid = Math.max(fresh, mid);
+      return { fresh, mid };
+    }
+
+    function formatMinutesCompact(minutes) {
+      const total = Math.max(0, Math.trunc(Number(minutes || 0)));
+      const hours = Math.floor(total / 60);
+      const mins = total % 60;
+      if (hours <= 0) return `${total}m`;
+      if (mins <= 0) return `${hours}h`;
+      return `${hours}h${mins}m`;
+    }
+
+    function updateFreshnessLegend(config) {
+      if (!legendFreshText || !legendMidText || !legendStaleText) return;
+      const { fresh, mid } = clampFreshnessThresholds(config);
+      const freshText = formatMinutesCompact(fresh);
+      const midText = formatMinutesCompact(mid);
+      legendFreshText.textContent = `Fresh (<= ${freshText})`;
+      legendMidText.textContent = mid > fresh ? `Mid (${freshText}-${midText})` : `Mid (<= ${midText})`;
+      legendStaleText.textContent = `Stale (> ${midText})`;
+    }
+
+    function nodeClass(node, nowSec, config) {
+      const heard = Number(node.last_heard || 0);
+      if (!heard) return "node-unknown";
+      const ageMinutes = (nowSec - heard) / 60;
+      if (!Number.isFinite(ageMinutes)) return "node-unknown";
+      const { fresh, mid } = clampFreshnessThresholds(config);
+      if (ageMinutes <= fresh) return "node-fresh";
+      if (ageMinutes <= mid) return "node-mid";
+      return "node-stale";
+    }
+
+    function prettyAge(node, nowSec) {
+      const heard = Number(node.last_heard || 0);
+      if (!heard) return "last heard unknown";
+      const ageSec = Math.max(0, Math.floor(nowSec - heard));
+      const hours = Math.floor(ageSec / 3600);
+      const mins = Math.floor((ageSec % 3600) / 60);
+      if (hours > 0) return `${hours}h ${mins}m ago`;
+      return `${mins}m ago`;
+    }
+
+    function formatEpochUtc(epochSec) {
+      const value = Number(epochSec || 0);
+      if (!Number.isFinite(value) || value <= 0) return "-";
+      return new Date(value * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+    }
+
+    function formatTelemetryKey(keyRaw) {
+      const key = String(keyRaw || "").trim();
+      if (!key) return "";
+      const spaced = key
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/_/g, " ")
+        .trim();
+      return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+    }
+
+    function formatTelemetryValue(value) {
+      if (value === null || value === undefined) return "-";
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) return "-";
+        const rounded = Math.round(value * 1000) / 1000;
+        return Number.isInteger(rounded) ? String(Math.trunc(rounded)) : String(rounded);
+      }
+      if (typeof value === "boolean") return value ? "true" : "false";
+      if (typeof value === "object") {
+        try {
+          return JSON.stringify(value);
+        } catch (_e) {
+          return String(value);
+        }
+      }
+      return String(value);
+    }
+
+    function formatNodeRole(value) {
+      const text = String(value || "").trim();
+      if (!text) return "-";
+      return text.replace(/_/g, " ");
+    }
+
+    function formatNodeFlag(value, options = {}) {
+      const unknownText = Object.prototype.hasOwnProperty.call(options || {}, "unknownText")
+        ? String(options.unknownText)
+        : "-";
+      if (value === true) return "Yes";
+      if (value === false) return "No";
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) return unknownText;
+        return value !== 0 ? "Yes" : "No";
+      }
+      const text = String(value ?? "").trim().toLowerCase();
+      if (!text) return unknownText;
+      if (["1", "true", "yes", "y", "on"].includes(text)) return "Yes";
+      if (["0", "false", "no", "n", "off"].includes(text)) return "No";
+      return unknownText;
+    }
+
+    function formatNodePublicKey(value) {
+      const text = String(value || "").trim();
+      if (!text) return "-";
+      if (text.length <= 26) return text;
+      return `${text.slice(0, 12)}...${text.slice(-10)}`;
+    }
+
+    function telemetryStatusKey(nodeNum, telemetryType) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      const type = String(telemetryType || "").trim().toLowerCase();
+      return `${nodeNumInt}:${type}`;
+    }
+
+    function telemetryRequestStatus(nodeNum, telemetryType) {
+      const key = telemetryStatusKey(nodeNum, telemetryType);
+      const status = state.telemetryRequestState && state.telemetryRequestState[key];
+      if (!status || typeof status !== "object") return null;
+      return status;
+    }
+
+    function setTelemetryRequestStatus(nodeNum, telemetryType, status) {
+      const key = telemetryStatusKey(nodeNum, telemetryType);
+      if (!state.telemetryRequestState || typeof state.telemetryRequestState !== "object") {
+        state.telemetryRequestState = {};
+      }
+      if (!status) {
+        delete state.telemetryRequestState[key];
+        return;
+      }
+      state.telemetryRequestState[key] = {
+        busy: Boolean(status.busy),
+        error: Boolean(status.error),
+        message: String(status.message || ""),
+      };
+    }
+
+    function nodeDetailsTabValue(rawTab) {
+      const value = String(rawTab || "").trim().toLowerCase();
+      if (
+        value === "telemetry"
+        || value === "position"
+        || value === "node_info"
+        || value === "traceroutes"
+      ) return value;
+      if (value === "device" || value === "environment" || value === "power") return "telemetry";
+      return "node_info";
+    }
+
+    function nodeDetailsTabLabel(tabValue) {
+      if (tabValue === "telemetry") return "Telemetry";
+      if (tabValue === "position") return "Position";
+      if (tabValue === "traceroutes") return "Traceroutes";
+      return "Node Info";
+    }
+
+    function nodeTelemetryTabValue(rawTab) {
+      const value = String(rawTab || "").trim().toLowerCase();
+      if (value === "power") return "power";
+      if (value === "environment") return "environment";
+      return "device";
+    }
+
+    function nodeTelemetryTabLabel(tabValue) {
+      if (tabValue === "power") return "Power";
+      if (tabValue === "environment") return "Environment";
+      return "Device";
+    }
+
+    function renderInfoRows(rows, emptyMessage = "No data yet.") {
+      const list = Array.isArray(rows)
+        ? rows.filter((row) => row && String(row.key || "").trim())
+        : [];
+      if (!list.length) {
+        return `<div class="telemetry-empty">${escapeHtml(emptyMessage)}</div>`;
+      }
+      return `
+        <div class="node-info-grid">
+          ${list.map((row) => {
+            const key = String(row.key || "").trim();
+            const value = row.value === undefined || row.value === null || String(row.value) === ""
+              ? "-"
+              : String(row.value);
+            const title = row.title === undefined || row.title === null ? "" : String(row.title);
+            const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+            return `
+              <div class="node-info-key">${escapeHtml(key)}</div>
+              <div class="node-info-value"${titleAttr}>${escapeHtml(value)}</div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function renderTelemetryRows(telemetry, options = {}) {
+      const emptyMessage = options && options.emptyMessage
+        ? String(options.emptyMessage)
+        : "No telemetry received yet.";
+      if (!telemetry || typeof telemetry !== "object") {
+        return `<div class="telemetry-empty">${escapeHtml(emptyMessage)}</div>`;
+      }
+      const keys = Object.keys(telemetry).sort((a, b) => a.localeCompare(b));
+      if (!keys.length) {
+        return `<div class="telemetry-empty">${escapeHtml(emptyMessage)}</div>`;
+      }
+      return `
+        <div class="telemetry-grid">
+          ${keys.map((key) => `
+            <div class="telemetry-key">${escapeHtml(formatTelemetryKey(key))}</div>
+            <div class="telemetry-value">${escapeHtml(formatTelemetryValue(telemetry[key]))}</div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    async function requestNodeTelemetry(nodeNum, telemetryType) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      const type = String(telemetryType || "").trim().toLowerCase();
+      if (!Number.isFinite(nodeNumInt) || !type) return;
+      if (state.selectedNodeNum !== nodeNumInt) return;
+      const statusPrefix = type === "environment"
+        ? "environment"
+        : (type === "power" ? "power" : "device");
+
+      setTelemetryRequestStatus(nodeNumInt, type, {
+        busy: true,
+        error: false,
+        message: `Requesting ${statusPrefix} telemetry...`,
+      });
+      renderSelectionDetails();
+
+      try {
+        const { ok, body } = await apiPost("/api/telemetry/request", {
+          node_num: nodeNumInt,
+          telemetry_type: type,
+        });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : `failed to request ${statusPrefix} telemetry`;
+          setTelemetryRequestStatus(nodeNumInt, type, {
+            busy: false,
+            error: true,
+            message: detail,
+          });
+          renderSelectionDetails();
+          return;
+        }
+        const detail = body && body.detail
+          ? String(body.detail)
+          : `requested ${statusPrefix} telemetry`;
+        setTelemetryRequestStatus(nodeNumInt, type, {
+          busy: false,
+          error: false,
+          message: detail,
+        });
+        renderSelectionDetails();
+      } catch (e) {
+        setTelemetryRequestStatus(nodeNumInt, type, {
+          busy: false,
+          error: true,
+          message: String(e || `failed to request ${statusPrefix} telemetry`),
+        });
+        renderSelectionDetails();
+      }
+    }
+
+    async function requestNodeInfo(nodeNum) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      if (!Number.isFinite(nodeNumInt)) return;
+      if (state.selectedNodeNum !== nodeNumInt) return;
+
+      setTelemetryRequestStatus(nodeNumInt, "node_info", {
+        busy: true,
+        error: false,
+        message: "Requesting node info...",
+      });
+      renderSelectionDetails();
+
+      try {
+        const { ok, body } = await apiPost("/api/nodeinfo/request", {
+          node_num: nodeNumInt,
+        });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to request node info";
+          setTelemetryRequestStatus(nodeNumInt, "node_info", {
+            busy: false,
+            error: true,
+            message: detail,
+          });
+          renderSelectionDetails();
+          return;
+        }
+        const detail = body && body.detail
+          ? String(body.detail)
+          : "requested node info";
+        setTelemetryRequestStatus(nodeNumInt, "node_info", {
+          busy: false,
+          error: false,
+          message: detail,
+        });
+        renderSelectionDetails();
+      } catch (e) {
+        setTelemetryRequestStatus(nodeNumInt, "node_info", {
+          busy: false,
+          error: true,
+          message: String(e || "failed to request node info"),
+        });
+        renderSelectionDetails();
+      }
+    }
+
+    async function requestNodePosition(nodeNum) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      if (!Number.isFinite(nodeNumInt)) return;
+      if (state.selectedNodeNum !== nodeNumInt) return;
+
+      setTelemetryRequestStatus(nodeNumInt, "position", {
+        busy: true,
+        error: false,
+        message: "Requesting position...",
+      });
+      renderSelectionDetails();
+
+      try {
+        const { ok, body } = await apiPost("/api/position/request", {
+          node_num: nodeNumInt,
+        });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to request position";
+          setTelemetryRequestStatus(nodeNumInt, "position", {
+            busy: false,
+            error: true,
+            message: detail,
+          });
+          renderSelectionDetails();
+          return;
+        }
+        const detail = body && body.detail
+          ? String(body.detail)
+          : "requested position";
+        setTelemetryRequestStatus(nodeNumInt, "position", {
+          busy: false,
+          error: false,
+          message: detail,
+        });
+        renderSelectionDetails();
+      } catch (e) {
+        setTelemetryRequestStatus(nodeNumInt, "position", {
+          busy: false,
+          error: true,
+          message: String(e || "failed to request position"),
+        });
+        renderSelectionDetails();
+      }
+    }
+
+    function numericRevision(value, fallback = 0) {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) return Math.max(0, Number(fallback) || 0);
+      return Math.trunc(parsed);
+    }
+
+    function snapshotRevisionOf(data) {
+      return numericRevision(data && data.snapshot_revision, state.lastSnapshotRevision);
+    }
+
+    function mapRevisionOf(data) {
+      return numericRevision(data && data.map_revision, state.lastMapRevision);
+    }
+
+    function logRevisionOf(data) {
+      const direct = numericRevision(data && data.log_revision, -1);
+      if (direct >= 0) return direct;
+      const logs = Array.isArray(data && data.logs) ? data.logs : [];
+      let maxSeq = 0;
+      for (const entry of logs) {
+        const seq = numericRevision(entry && entry.seq, 0);
+        if (seq > maxSeq) maxSeq = seq;
+      }
+      return maxSeq;
+    }
+
+    function mapStyleSignatureOf(data) {
+      const config = data && typeof data.config === "object" ? data.config : {};
+      const fresh = numericRevision(config.fresh_window, 0);
+      const mid = numericRevision(config.mid_window, 0);
+      return `${fresh}:${mid}`;
+    }
+
+    function tracerouteControlFromData(data) {
+      if (!data || typeof data !== "object") return {};
+      const control = data.traceroute_control;
+      if (!control || typeof control !== "object") return {};
+      return control;
+    }
+
+    function tracerouteQueueEntriesFromData(data) {
+      const control = tracerouteControlFromData(data);
+      const rawEntries = Array.isArray(control.queue_entries) ? control.queue_entries : [];
+      const entries = [];
+      for (const rawEntry of rawEntries) {
+        if (!rawEntry || typeof rawEntry !== "object") continue;
+        const queueId = Number(rawEntry.queue_id);
+        const nodeNum = Number(rawEntry.node_num);
+        if (!Number.isFinite(queueId) || queueId <= 0) continue;
+        if (!Number.isFinite(nodeNum)) continue;
+        const statusRaw = String(rawEntry.status || "").trim().toLowerCase();
+        const status = statusRaw === "running" ? "running" : "queued";
+        entries.push({
+          queue_id: Math.trunc(queueId),
+          node_num: Math.trunc(nodeNum),
+          status,
+          created_at_utc: String(rawEntry.created_at_utc || ""),
+          updated_at_utc: String(rawEntry.updated_at_utc || ""),
+        });
+      }
+      return entries;
+    }
+
+    function updateQueueManageButton(data) {
+      if (!manageTraceQueueBtn) return;
+      const count = tracerouteQueueEntriesFromData(data).length;
+      if (count > 0) {
+        manageTraceQueueBtn.textContent = `Manage traceroute queue (${count})`;
+      } else {
+        manageTraceQueueBtn.textContent = "Manage traceroute queue";
+      }
+    }
+
+    function queueNodeLabel(nodeNum) {
+      const nodeNumInt = Math.trunc(Number(nodeNum));
+      const fallback = `Node #${nodeNumInt}`;
+      const node = state.nodeByNum.get(nodeNumInt);
+      if (!node) return fallback;
+      const short = nodeLabel(node);
+      const longName = node.long_name && String(node.long_name).trim()
+        ? String(node.long_name).trim()
+        : "";
+      if (!longName || longName.toLowerCase() === short.toLowerCase()) {
+        return `${short} (#${nodeNumInt})`;
+      }
+      return `${short} / ${longName} (#${nodeNumInt})`;
+    }
+
+    function queueStatusText(status) {
+      return status === "running" ? "Running" : "Queued";
+    }
+
+    function setQueueStatus(message, options = {}) {
+      if (!queueStatus) return;
+      const text = String(message || "").trim();
+      const isError = Boolean(options.error);
+      queueStatus.textContent = text;
+      queueStatus.classList.toggle("visible", Boolean(text));
+      queueStatus.classList.toggle("error", isError);
+    }
+
+    function renderQueueModal(data = state.lastServerData) {
+      if (!queueSummary || !queueList) return;
+      const entries = tracerouteQueueEntriesFromData(data);
+      const queuedCount = entries.filter((entry) => entry.status === "queued").length;
+      const runningCount = entries.length - queuedCount;
+      if (!entries.length) {
+        queueSummary.textContent = "Queue is empty.";
+        queueList.innerHTML = '<div class="empty">No traceroutes are queued.</div>';
+        return;
+      }
+      queueSummary.textContent = `${entries.length} total (${runningCount} running, ${queuedCount} queued)`;
+      queueList.innerHTML = entries.map((entry) => {
+        const queueId = Number(entry.queue_id);
+        const status = entry.status === "running" ? "running" : "queued";
+        const busy = state.queueRemoveBusyIds.has(queueId);
+        const removeDisabled = status === "running" || busy;
+        const removeText = status === "running"
+          ? "Running"
+          : busy
+            ? "Removing..."
+            : "Remove";
+        return `
+          <div class="queue-item">
+            <div class="queue-item-head">
+              <div class="queue-item-title">#${escapeHtml(queueId)} ${escapeHtml(queueNodeLabel(entry.node_num))}</div>
+            </div>
+            <div class="queue-item-meta">Queued at: ${escapeHtml(entry.created_at_utc || "-")}</div>
+            <div class="queue-item-meta">Updated at: ${escapeHtml(entry.updated_at_utc || "-")}</div>
+            <div class="queue-item-actions">
+              <span class="queue-status-pill ${status}">${escapeHtml(queueStatusText(status))}</span>
+              <button class="queue-remove-btn" type="button" data-queue-id="${escapeHtml(queueId)}" ${removeDisabled ? "disabled" : ""}>${escapeHtml(removeText)}</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      for (const btn of queueList.querySelectorAll("button[data-queue-id]")) {
+        btn.addEventListener("click", () => {
+          const queueId = Number(btn.dataset.queueId);
+          if (!Number.isFinite(queueId)) return;
+          removeQueueEntry(Math.trunc(queueId));
+        });
+      }
+    }
+
+    let lastQueueFocus = null;
+    function openQueueModal() {
+      if (!queueModal) return;
+      lastQueueFocus = document.activeElement;
+      setQueueStatus("", { error: false });
+      renderQueueModal(state.lastServerData);
+      queueModal.classList.remove("hidden");
+      try {
+        if (queueClose) queueClose.focus();
+      } catch (_e) {
+      }
+    }
+
+    function closeQueueModal() {
+      if (!queueModal) return;
+      queueModal.classList.add("hidden");
+      try {
+        if (manageTraceQueueBtn) {
+          manageTraceQueueBtn.focus();
+        } else if (lastQueueFocus && typeof lastQueueFocus.focus === "function") {
+          lastQueueFocus.focus();
+        }
+      } catch (_e) {
+      }
+      lastQueueFocus = null;
+    }
+
+    async function removeQueueEntry(queueId) {
+      const queueIdInt = Math.trunc(Number(queueId));
+      if (!Number.isFinite(queueIdInt) || queueIdInt <= 0) return;
+      if (state.queueRemoveBusyIds.has(queueIdInt)) return;
+      state.queueRemoveBusyIds.add(queueIdInt);
+      renderQueueModal(state.lastServerData);
+      setQueueStatus(`Removing queue entry #${queueIdInt}...`, { error: false });
+
+      try {
+        const { ok, body } = await apiPost("/api/traceroute/queue/remove", { queue_id: queueIdInt });
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "failed to remove queue entry";
+          setQueueStatus(detail, { error: true });
+          return;
+        }
+        const detail = body && body.detail
+          ? String(body.detail)
+          : `removed queued traceroute #${queueIdInt}`;
+        setQueueStatus(detail, { error: false });
+        if (body && body.snapshot && typeof body.snapshot === "object") {
+          applySnapshot(body.snapshot, { force: true });
+        } else {
+          await refresh({ force: true });
+        }
+      } catch (e) {
+        setQueueStatus(String(e || "failed to remove queue entry"), { error: true });
+      } finally {
+        state.queueRemoveBusyIds.delete(queueIdInt);
+        renderQueueModal(state.lastServerData);
+      }
+    }
+
+    function shortNameFromNodeNum(rawNum) {
+      const num = Number(rawNum);
+      if (!Number.isFinite(num)) return "";
+      const uint32 = Math.trunc(num) >>> 0;
+      return uint32.toString(16).padStart(8, "0").slice(-4);
+    }
+
+    function nodeFromRecord(record) {
+      if (!record || typeof record !== "object") return "?";
+      if (record.short_name && String(record.short_name).trim()) return String(record.short_name).trim();
+      if (record.id && String(record.id).trim()) return String(record.id).replace("!", "");
+      if (record.num !== undefined && record.num !== null) {
+        const shortFallback = shortNameFromNodeNum(record.num);
+        if (shortFallback) return shortFallback;
+        return String(record.num);
+      }
+      return "?";
+    }
+
+    function hasCoord(node) {
+      return (
+        node &&
+        typeof node.lat === "number" &&
+        Number.isFinite(node.lat) &&
+        typeof node.lon === "number" &&
+        Number.isFinite(node.lon)
+      );
+    }
+
+    function nodeCoordKey(node) {
+      if (!hasCoord(node)) return "";
+      return `${Number(node.lat).toFixed(7)},${Number(node.lon).toFixed(7)}`;
+    }
+
+    function spiderRadiusPx(count) {
+      const n = Math.max(0, Math.trunc(Number(count) || 0));
+      if (n <= 1) return SPIDERFY_RADIUS_MIN_PX;
+      const radius = SPIDERFY_RADIUS_MIN_PX + (n - 1) * SPIDERFY_RADIUS_STEP_PX;
+      return Math.min(SPIDERFY_RADIUS_MAX_PX, radius);
+    }
+
+    function spiderLayoutLatLngs(centerLatLng, count) {
+      const n = Math.max(0, Math.trunc(Number(count) || 0));
+      if (!centerLatLng || n <= 0) return [];
+      const centerPoint = map.latLngToLayerPoint(centerLatLng);
+      const angleStep = (Math.PI * 2) / n;
+      const radius = spiderRadiusPx(n);
+      const startAngle = -Math.PI / 2;
+      const latLngs = [];
+      for (let i = 0; i < n; i += 1) {
+        const angle = startAngle + i * angleStep;
+        const point = L.point(
+          centerPoint.x + radius * Math.cos(angle),
+          centerPoint.y + radius * Math.sin(angle)
+        );
+        latLngs.push(map.layerPointToLatLng(point));
+      }
+      return latLngs;
+    }
+
+    function metersPerLonDegree(lat) {
+      return 111111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+    }
+
+    function offsetLatLon(lat, lon, eastMeters, northMeters) {
+      const newLat = lat + northMeters / 111111;
+      const newLon = lon + eastMeters / metersPerLonDegree(lat);
+      return [newLat, newLon];
+    }
+
+    function offsetSegment(lat1, lon1, lat2, lon2, offsetMeters) {
+      const midLat = (lat1 + lat2) / 2;
+      const mLat = 111111;
+      const mLon = metersPerLonDegree(midLat);
+
+      const x1 = lon1 * mLon;
+      const y1 = lat1 * mLat;
+      const x2 = lon2 * mLon;
+      const y2 = lat2 * mLat;
+
+      // Use a canonical orientation for the normal vector so the same
+      // undirected segment gets a stable left/right offset even when traversed
+      // in opposite directions.
+      let ax = x1;
+      let ay = y1;
+      let bx = x2;
+      let by = y2;
+      if (ax > bx || (Math.abs(ax - bx) < 1e-9 && ay > by)) {
+        ax = x2;
+        ay = y2;
+        bx = x1;
+        by = y1;
+      }
+
+      const dx = bx - ax;
+      const dy = by - ay;
+      const length = Math.hypot(dx, dy);
+      if (length < 1e-6) {
+        return [[lat1, lon1], [lat2, lon2]];
+      }
+
+      const nx = -dy / length;
+      const ny = dx / length;
+      const ox = nx * offsetMeters;
+      const oy = ny * offsetMeters;
+
+      const segDx = x2 - x1;
+      const segDy = y2 - y1;
+      const segLength = Math.hypot(segDx, segDy);
+      if (segLength < 1e-6) {
+        return [[lat1, lon1], [lat2, lon2]];
+      }
+      const ux = segDx / segLength;
+      const uy = segDy / segLength;
+
+      // Taper into the offset path so lines attach exactly to node markers.
+      let taper = Math.max(
+        ROUTE_OFFSET_TAPER_MIN_METERS,
+        Math.min(ROUTE_OFFSET_TAPER_MAX_METERS, segLength * ROUTE_OFFSET_TAPER_RATIO)
+      );
+      taper = Math.min(taper, segLength * 0.45);
+
+      if (taper < 1e-3) {
+        return [[lat1, lon1], [lat2, lon2]];
+      }
+
+      const inner1x = x1 + ux * taper + ox;
+      const inner1y = y1 + uy * taper + oy;
+      const inner2x = x2 - ux * taper + ox;
+      const inner2y = y2 - uy * taper + oy;
+
+      return [
+        [lat1, lon1],
+        [inner1y / mLat, inner1x / mLon],
+        [inner2y / mLat, inner2x / mLon],
+        [lat2, lon2],
+      ];
+    }
+
+    function segmentDistanceMeters(lat1, lon1, lat2, lon2) {
+      const midLat = (lat1 + lat2) / 2;
+      const mLat = 111111;
+      const mLon = metersPerLonDegree(midLat);
+      const dx = (lon2 - lon1) * mLon;
+      const dy = (lat2 - lat1) * mLat;
+      return Math.hypot(dx, dy);
+    }
+
+    function estimateNodePositions(nodes, traces) {
+      const nodeMap = new Map();
+      for (const raw of Array.isArray(nodes) ? nodes : []) {
+        const num = Number(raw?.num);
+        if (!Number.isFinite(num)) continue;
+        const node = { ...(raw || {}), num, estimated: false };
+        if (!hasCoord(node)) {
+          node.lat = null;
+          node.lon = null;
+        }
+        nodeMap.set(num, node);
+      }
+
+      function ensureTraceNode(rawNum) {
+        const num = Number(rawNum);
+        if (!Number.isFinite(num) || nodeMap.has(num)) return;
+        const shortName = shortNameFromNodeNum(num) || null;
+        nodeMap.set(num, {
+          num,
+          id: null,
+          long_name: shortName ? `Unknown ${shortName}` : "Unknown",
+          short_name: shortName,
+          lat: null,
+          lon: null,
+          last_heard: null,
+          estimated: false,
+          trace_only: true,
+        });
+      }
+
+      // Build graph edges from all observed traceroute hop pairs.
+      const adj = new Map(); // num -> Map(neighborNum -> { count, snr_sum, snr_count })
+      function ensureAdj(num) {
+        if (!adj.has(num)) adj.set(num, new Map());
+      }
+      function addEdge(aRaw, bRaw, snrDb) {
+        const a = Number(aRaw);
+        const b = Number(bRaw);
+        if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return;
+        if (!nodeMap.has(a) || !nodeMap.has(b)) return;
+        ensureAdj(a);
+        ensureAdj(b);
+        const mA = adj.get(a);
+        const mB = adj.get(b);
+        const aMeta = mA.get(b) || { count: 0, snr_sum: 0, snr_count: 0 };
+        aMeta.count += 1;
+        if (Number.isFinite(snrDb)) {
+          aMeta.snr_sum += snrDb;
+          aMeta.snr_count += 1;
+        }
+        mA.set(b, aMeta);
+
+        const bMeta = mB.get(a) || { count: 0, snr_sum: 0, snr_count: 0 };
+        bMeta.count += 1;
+        if (Number.isFinite(snrDb)) {
+          bMeta.snr_sum += snrDb;
+          bMeta.snr_count += 1;
+        }
+        mB.set(a, bMeta);
+      }
+
+      function edgeSnrFromRoute(routeNums, snrList, index) {
+        if (!Array.isArray(snrList)) return NaN;
+        if (snrList.length === routeNums.length) {
+          const raw = index + 1 < snrList.length ? snrList[index + 1] : snrList[index];
+          const value = Number(raw);
+          return Number.isFinite(value) ? value : NaN;
+        }
+        if (snrList.length === routeNums.length - 1) {
+          const value = Number(snrList[index]);
+          return Number.isFinite(value) ? value : NaN;
+        }
+        return NaN;
+      }
+
+      for (const trace of Array.isArray(traces) ? traces : []) {
+        for (const key of ["towards_nums", "back_nums"]) {
+          const route = Array.isArray(trace?.[key]) ? trace[key] : [];
+          const snrKey = key === "towards_nums" ? "towards_snr_db" : "back_snr_db";
+          const snrList = Array.isArray(trace?.[snrKey]) ? trace[snrKey] : null;
+          for (const rawNum of route) {
+            ensureTraceNode(rawNum);
+          }
+          const nums = route.map((value) => Number(value));
+          if (nums.length < 2) continue;
+          for (let i = 0; i < nums.length - 1; i += 1) {
+            addEdge(nums[i], nums[i + 1], edgeSnrFromRoute(nums, snrList, i));
+          }
+        }
+      }
+
+      const anchors = [];
+      for (const node of nodeMap.values()) {
+        if (hasCoord(node)) anchors.push(node);
+      }
+      if (!anchors.length) return nodeMap;
+
+      function median(values) {
+        const items = Array.isArray(values) ? values.filter((v) => Number.isFinite(v)) : [];
+        if (!items.length) return NaN;
+        items.sort((a, b) => a - b);
+        const mid = Math.floor(items.length / 2);
+        if (items.length % 2) return items[mid];
+        return (items[mid - 1] + items[mid]) / 2;
+      }
+
+      function haversineMeters(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const rad = Math.PI / 180;
+        const phi1 = Number(lat1) * rad;
+        const phi2 = Number(lat2) * rad;
+        const dPhi = (Number(lat2) - Number(lat1)) * rad;
+        const dLam = (Number(lon2) - Number(lon1)) * rad;
+        const s1 = Math.sin(dPhi / 2);
+        const s2 = Math.sin(dLam / 2);
+        const a = s1 * s1 + Math.cos(phi1) * Math.cos(phi2) * s2 * s2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+        return R * c;
+      }
+
+      // Local equirectangular projection around the mean anchor position.
+      let lat0 = 0;
+      let lon0 = 0;
+      for (const a of anchors) {
+        lat0 += Number(a.lat);
+        lon0 += Number(a.lon);
+      }
+      lat0 /= anchors.length;
+      lon0 /= anchors.length;
+      const mLat = 111111;
+      const mLon = metersPerLonDegree(lat0);
+      function llToXY(lat, lon) {
+        return {
+          x: (Number(lon) - lon0) * mLon,
+          y: (Number(lat) - lat0) * mLat,
+        };
+      }
+      function xyToLL(x, y) {
+        return {
+          lat: lat0 + Number(y) / mLat,
+          lon: lon0 + Number(x) / mLon,
+        };
+      }
+
+      const anchorPos = new Map(); // num -> {x,y}
+      for (const a of anchors) {
+        anchorPos.set(Number(a.num), llToXY(a.lat, a.lon));
+      }
+
+      function edgeMeanSnrDb(meta) {
+        if (!meta || !meta.snr_count) return NaN;
+        return meta.snr_sum / meta.snr_count;
+      }
+
+      function snrQualityFromDb(snrDb) {
+        const value = Number(snrDb);
+        if (!Number.isFinite(value)) return null;
+        // Typical LoRa SNR values fall roughly between [-20, +12].
+        const clamped = Math.max(-20, Math.min(12, value));
+        return (clamped + 20) / 32;
+      }
+
+      function edgeCostUnits(meta) {
+        const q = snrQualityFromDb(edgeMeanSnrDb(meta));
+        if (q === null) return 1;
+        // High SNR => shorter, low SNR => longer (bounded multiplier).
+        const mult = 0.85 + (1 - q) * 1.25;
+        return Math.max(0.7, Math.min(2.4, mult));
+      }
+
+      function edgeSpringWeight(meta) {
+        const count = meta && Number.isFinite(meta.count) ? Number(meta.count) : 1;
+        const q = snrQualityFromDb(edgeMeanSnrDb(meta));
+        const snrFactor = q === null ? 0.85 : 0.55 + 0.75 * q;
+        return Math.min(3.2, Math.sqrt(Math.max(1, count)) * snrFactor);
+      }
+
+      function dijkstra(startNum, maxCost) {
+        const start = Number(startNum);
+        const dist = new Map();
+        if (!Number.isFinite(start) || !nodeMap.has(start)) return dist;
+        dist.set(start, 0);
+
+        const heap = []; // [cost, num]
+        function heapPush(item) {
+          heap.push(item);
+          let i = heap.length - 1;
+          while (i > 0) {
+            const p = (i - 1) >> 1;
+            if (heap[p][0] <= item[0]) break;
+            heap[i] = heap[p];
+            i = p;
+          }
+          heap[i] = item;
+        }
+        function heapPop() {
+          const top = heap[0];
+          const last = heap.pop();
+          if (heap.length) {
+            let i = 0;
+            while (true) {
+              const left = i * 2 + 1;
+              const right = left + 1;
+              if (left >= heap.length) break;
+              let child = left;
+              if (right < heap.length && heap[right][0] < heap[left][0]) child = right;
+              if (heap[child][0] >= last[0]) break;
+              heap[i] = heap[child];
+              i = child;
+            }
+            heap[i] = last;
+          }
+          return top;
+        }
+
+        heapPush([0, start]);
+        while (heap.length) {
+          const [cost, cur] = heapPop();
+          const best = dist.get(cur);
+          if (best === undefined || cost > best + 1e-9) continue;
+          if (cost > maxCost) continue;
+          const neighbors = adj.get(cur);
+          if (!neighbors) continue;
+          for (const [nxt, meta] of neighbors.entries()) {
+            const step = edgeCostUnits(meta);
+            const nextCost = cost + step;
+            if (!Number.isFinite(nextCost) || nextCost > maxCost) continue;
+            const prev = dist.get(nxt);
+            if (prev === undefined || nextCost < prev - 1e-9) {
+              dist.set(nxt, nextCost);
+              heapPush([nextCost, nxt]);
+            }
+          }
+        }
+        return dist;
+      }
+
+      function bfs(startNum, maxDepth) {
+        const start = Number(startNum);
+        const dist = new Map();
+        if (!Number.isFinite(start) || !nodeMap.has(start)) return dist;
+        dist.set(start, 0);
+        const queue = [start];
+        for (let qi = 0; qi < queue.length; qi += 1) {
+          const cur = queue[qi];
+          const curDist = dist.get(cur) || 0;
+          if (curDist >= maxDepth) continue;
+          const neighbors = adj.get(cur);
+          if (!neighbors) continue;
+          for (const nxt of neighbors.keys()) {
+            if (dist.has(nxt)) continue;
+            dist.set(nxt, curDist + 1);
+            queue.push(nxt);
+          }
+        }
+        return dist;
+      }
+
+      const MAX_BFS_HOPS = 25;
+      const MAX_DIJKSTRA_COST = MAX_BFS_HOPS * 2.6;
+      const hopByAnchor = new Map(); // anchorNum -> Map(nodeNum -> hops)
+      const costByAnchor = new Map(); // anchorNum -> Map(nodeNum -> costUnits)
+      for (const a of anchors) {
+        const aNum = Number(a.num);
+        hopByAnchor.set(aNum, bfs(aNum, MAX_BFS_HOPS));
+        costByAnchor.set(aNum, dijkstra(aNum, MAX_DIJKSTRA_COST));
+      }
+
+      // Calibrate meters-per-unit from anchor pairs. Units are the sum of
+      // edgeCostUnits(...) along the best path.
+      const globalRatios = [];
+      const perAnchorRatios = new Map(); // anchorNum -> [metersPerUnit]
+      const MAX_CALIB_HOPS = 12;
+      const MIN_UNIT_METERS = 10;
+      const MAX_UNIT_METERS = 20000;
+      for (let i = 0; i < anchors.length; i += 1) {
+        const a = anchors[i];
+        const hopsA = hopByAnchor.get(Number(a.num));
+        const costsA = costByAnchor.get(Number(a.num));
+        if (!hopsA || !costsA) continue;
+        for (let j = i + 1; j < anchors.length; j += 1) {
+          const b = anchors[j];
+          const hop = hopsA.get(Number(b.num));
+          if (!hop || hop <= 0 || hop > MAX_CALIB_HOPS) continue;
+          const costUnits = costsA.get(Number(b.num));
+          if (!Number.isFinite(costUnits) || costUnits <= 0) continue;
+          const meters = haversineMeters(a.lat, a.lon, b.lat, b.lon);
+          if (!Number.isFinite(meters) || meters <= 0) continue;
+          const ratio = meters / costUnits;
+          if (!Number.isFinite(ratio) || ratio < MIN_UNIT_METERS || ratio > MAX_UNIT_METERS) continue;
+          globalRatios.push(ratio);
+          if (!perAnchorRatios.has(Number(a.num))) perAnchorRatios.set(Number(a.num), []);
+          if (!perAnchorRatios.has(Number(b.num))) perAnchorRatios.set(Number(b.num), []);
+          perAnchorRatios.get(Number(a.num)).push(ratio);
+          perAnchorRatios.get(Number(b.num)).push(ratio);
+        }
+      }
+      let globalMetersPerUnit = median(globalRatios);
+      if (!Number.isFinite(globalMetersPerUnit) || globalMetersPerUnit <= 0) {
+        globalMetersPerUnit = 400; // safe default when we can't calibrate from anchors.
+      }
+
+      const perAnchorMetersPerUnit = new Map();
+      for (const a of anchors) {
+        const ratios = perAnchorRatios.get(Number(a.num)) || [];
+        const med = median(ratios);
+        if (ratios.length >= 3 && Number.isFinite(med) && med > 0) {
+          // Blend with global so tiny anchor sets don't overfit.
+          perAnchorMetersPerUnit.set(Number(a.num), 0.7 * med + 0.3 * globalMetersPerUnit);
+        }
+      }
+
+      function metersPerUnitForAnchor(anchorNum) {
+        const local = perAnchorMetersPerUnit.get(Number(anchorNum));
+        if (Number.isFinite(local) && local > 0) return local;
+        return globalMetersPerUnit;
+      }
+
+      const constraintsByNode = new Map(); // num -> [{anchor_num,x,y,hop,cost,r,w}]
+      const MAX_CONSTRAINT_HOPS = 12;
+      const MAX_ANCHORS_PER_NODE = 8;
+      for (const [num, node] of nodeMap.entries()) {
+        if (hasCoord(node)) continue;
+        const constraints = [];
+        for (const a of anchors) {
+          const hopsA = hopByAnchor.get(Number(a.num));
+          const costsA = costByAnchor.get(Number(a.num));
+          if (!hopsA || !costsA) continue;
+          const hop = hopsA.get(Number(num));
+          if (!hop || hop <= 0 || hop > MAX_CONSTRAINT_HOPS) continue;
+          const costUnits = costsA.get(Number(num));
+          if (!Number.isFinite(costUnits) || costUnits <= 0) continue;
+          const p = anchorPos.get(Number(a.num));
+          if (!p) continue;
+          const unitMeters = metersPerUnitForAnchor(Number(a.num));
+          const r = costUnits * unitMeters;
+          constraints.push({
+            anchor_num: Number(a.num),
+            x: p.x,
+            y: p.y,
+            hop,
+            cost: costUnits,
+            r,
+            w: 1 / (hop * hop),
+          });
+        }
+        constraints.sort((c1, c2) => c1.hop - c2.hop || c1.anchor_num - c2.anchor_num);
+        if (constraints.length > MAX_ANCHORS_PER_NODE) constraints.length = MAX_ANCHORS_PER_NODE;
+        constraintsByNode.set(Number(num), constraints);
+      }
+
+      const posByNum = new Map(); // num -> {x,y}
+      const fixedNums = new Set();
+      for (const a of anchors) {
+        const p = anchorPos.get(Number(a.num));
+        if (!p) continue;
+        posByNum.set(Number(a.num), { x: p.x, y: p.y });
+        fixedNums.add(Number(a.num));
+      }
+
+      const strongNums = new Set();
+      function solveMultilateration(constraints) {
+        let x = 0;
+        let y = 0;
+        let wSum = 0;
+        for (const c of constraints) {
+          x += c.x * c.w;
+          y += c.y * c.w;
+          wSum += c.w;
+        }
+        if (wSum > 0) {
+          x /= wSum;
+          y /= wSum;
+        }
+
+        let lambda = 1;
+        for (let iter = 0; iter < 22; iter += 1) {
+          let A11 = 0;
+          let A12 = 0;
+          let A22 = 0;
+          let b1 = 0;
+          let b2 = 0;
+          for (const c of constraints) {
+            const dx = x - c.x;
+            const dy = y - c.y;
+            const d = Math.hypot(dx, dy) || 1e-6;
+            const jx = dx / d;
+            const jy = dy / d;
+            const resid = d - c.r;
+            const w = c.w;
+            A11 += w * jx * jx;
+            A12 += w * jx * jy;
+            A22 += w * jy * jy;
+            b1 += w * jx * resid;
+            b2 += w * jy * resid;
+          }
+
+          A11 += lambda;
+          A22 += lambda;
+          const det = A11 * A22 - A12 * A12;
+          if (!Number.isFinite(det) || Math.abs(det) < 1e-9) break;
+          const dxStep = (-A22 * b1 + A12 * b2) / det;
+          const dyStep = (A12 * b1 - A11 * b2) / det;
+          if (!Number.isFinite(dxStep) || !Number.isFinite(dyStep)) break;
+
+          const stepMag = Math.hypot(dxStep, dyStep);
+          x += dxStep;
+          y += dyStep;
+          if (stepMag < 0.2) break;
+        }
+        return { x, y };
+      }
+
+      for (const [num, node] of nodeMap.entries()) {
+        if (hasCoord(node)) continue;
+        const constraints = constraintsByNode.get(Number(num)) || [];
+        if (constraints.length < 3) continue;
+        const solved = solveMultilateration(constraints);
+        posByNum.set(Number(num), solved);
+        strongNums.add(Number(num));
+      }
+
+      function neighborHint(num) {
+        const neighbors = adj.get(Number(num));
+        if (!neighbors) return null;
+        let x = 0;
+        let y = 0;
+        let count = 0;
+        for (const nxt of neighbors.keys()) {
+          const p = posByNum.get(Number(nxt));
+          if (!p) continue;
+          x += p.x;
+          y += p.y;
+          count += 1;
+        }
+        if (!count) return null;
+        return { x: x / count, y: y / count };
+      }
+
+      function circleIntersections(a, r1, b, r2) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy);
+        if (!Number.isFinite(d) || d < 1e-6) return [];
+        if (d > r1 + r2) return [];
+        if (d < Math.abs(r1 - r2)) return [];
+        const t = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+        const h2 = Math.max(0, r1 * r1 - t * t);
+        const h = Math.sqrt(h2);
+        const ux = dx / d;
+        const uy = dy / d;
+        const px = a.x + ux * t;
+        const py = a.y + uy * t;
+        const rx = -uy * h;
+        const ry = ux * h;
+        return [
+          { x: px + rx, y: py + ry },
+          { x: px - rx, y: py - ry },
+        ];
+      }
+
+      function placeWithTwoAnchors(num, c1, c2, hint) {
+        const a = { x: c1.x, y: c1.y };
+        const b = { x: c2.x, y: c2.y };
+        const r1 = c1.r;
+        const r2 = c2.r;
+        const ints = circleIntersections(a, r1, b, r2);
+        if (ints.length === 2) {
+          if (hint) {
+            const d0 = Math.hypot(ints[0].x - hint.x, ints[0].y - hint.y);
+            const d1 = Math.hypot(ints[1].x - hint.x, ints[1].y - hint.y);
+            return d0 <= d1 ? ints[0] : ints[1];
+          }
+          // Deterministic tie-break.
+          const pick = (Math.abs(Number(num)) % 2) === 0 ? ints[0] : ints[1];
+          return pick;
+        }
+
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 1e-6;
+        const t = r1 + r2 > 1e-6 ? Math.max(0, Math.min(1, r1 / (r1 + r2))) : 0.5;
+        let x = a.x + (dx / d) * d * t;
+        let y = a.y + (dy / d) * d * t;
+
+        // Nudge off the line so multiple nodes don't stack exactly.
+        const angle = ((Math.abs(Number(num)) % 360) * Math.PI) / 180;
+        const nudge = Math.min(0.22 * globalMetersPerUnit, 120);
+        x += Math.cos(angle) * nudge;
+        y += Math.sin(angle) * nudge;
+        return { x, y };
+      }
+
+      function placeWithOneAnchor(num, c1, hint) {
+        const base = { x: c1.x, y: c1.y };
+        const r = c1.r;
+        let angle = ((Math.abs(Number(num)) % 360) * Math.PI) / 180;
+        if (hint) {
+          angle = Math.atan2(hint.y - base.y, hint.x - base.x);
+        }
+        return {
+          x: base.x + Math.cos(angle) * r,
+          y: base.y + Math.sin(angle) * r,
+        };
+      }
+
+      // Fill remaining nodes using whatever constraints exist, in a few passes so
+      // neighbor hints become available.
+      for (let pass = 0; pass < 5; pass += 1) {
+        let progressed = false;
+        for (const [num, node] of nodeMap.entries()) {
+          if (hasCoord(node) || posByNum.has(Number(num))) continue;
+          const constraints = constraintsByNode.get(Number(num)) || [];
+          if (!constraints.length) continue;
+          const hint = neighborHint(Number(num));
+
+          if (constraints.length >= 3) {
+            const solved = solveMultilateration(constraints);
+            posByNum.set(Number(num), solved);
+            strongNums.add(Number(num));
+            progressed = true;
+            continue;
+          }
+          if (constraints.length === 2) {
+            const placed = placeWithTwoAnchors(Number(num), constraints[0], constraints[1], hint);
+            posByNum.set(Number(num), placed);
+            progressed = true;
+            continue;
+          }
+          if (constraints.length === 1) {
+            const placed = placeWithOneAnchor(Number(num), constraints[0], hint);
+            posByNum.set(Number(num), placed);
+            progressed = true;
+            continue;
+          }
+        }
+        if (!progressed) break;
+      }
+
+      function mobility(num) {
+        if (fixedNums.has(Number(num))) return 0;
+        if (strongNums.has(Number(num))) return 0.25;
+        return 1;
+      }
+
+      // Small spring relaxation pass to reduce local edge distortion while keeping
+      // well-anchored nodes mostly stable.
+      const SPRING_ITERS = 28;
+      const SPRING_ALPHA = 0.08;
+      for (let iter = 0; iter < SPRING_ITERS; iter += 1) {
+        for (const [uRaw, neighbors] of adj.entries()) {
+          const u = Number(uRaw);
+          for (const [vRaw, meta] of neighbors.entries()) {
+            const v = Number(vRaw);
+            if (u >= v) continue; // handle each undirected edge once
+            const pu = posByNum.get(u);
+            const pv = posByNum.get(v);
+            if (!pu || !pv) continue;
+            const dx = pv.x - pu.x;
+            const dy = pv.y - pu.y;
+            const dist = Math.hypot(dx, dy);
+            if (!Number.isFinite(dist) || dist < 1e-6) continue;
+            const desired = edgeCostUnits(meta) * globalMetersPerUnit;
+            if (!Number.isFinite(desired) || desired <= 0) continue;
+            const weight = edgeSpringWeight(meta);
+            const err = dist - desired;
+            const maxStep = 0.45 * desired;
+            let step = SPRING_ALPHA * weight * err;
+            step = Math.max(-maxStep, Math.min(maxStep, step));
+
+            const ux = dx / dist;
+            const uy = dy / dist;
+            const mu = mobility(u);
+            const mv = mobility(v);
+            const total = mu + mv;
+            if (total <= 0) continue;
+            const du = (mu / total) * step;
+            const dv = (mv / total) * step;
+            if (mu > 0) {
+              pu.x += ux * du;
+              pu.y += uy * du;
+            }
+            if (mv > 0) {
+              pv.x -= ux * dv;
+              pv.y -= uy * dv;
+            }
+          }
+        }
+      }
+
+      for (const [num, p] of posByNum.entries()) {
+        const node = nodeMap.get(Number(num));
+        if (!node) continue;
+        if (hasCoord(node)) continue; // never overwrite GPS
+        const ll = xyToLL(p.x, p.y);
+        if (!Number.isFinite(ll.lat) || !Number.isFinite(ll.lon)) continue;
+        node.lat = ll.lat;
+        node.lon = ll.lon;
+        node.estimated = true;
+      }
+
+      return nodeMap;
+    }
+
+    function renderLogs(logs) {
+      const container = document.getElementById("logList");
+      const entries = Array.isArray(logs) ? logs : [];
+      const stickToBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 24;
+      if (!entries.length) {
+        container.innerHTML = '<div class="empty">No runtime logs yet.</div>';
+        return;
+      }
+      container.innerHTML = entries.map((entry) => {
+        const streamClass = entry && entry.stream === "stderr" ? "stderr" : "";
+        return `<div class="log-entry ${streamClass}">${escapeHtml(entry.message || "")}</div>`;
+      }).join("");
+      if (stickToBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    function renderNodeList(nodes) {
+      const container = document.getElementById("nodeList");
+      const nowSec = Date.now() / 1000;
+      if (nodeSearchInput.value !== state.nodeSearchQuery) {
+        nodeSearchInput.value = state.nodeSearchQuery;
+      }
+      if (nodeSortSelect.value !== state.nodeSortMode) {
+        nodeSortSelect.value = state.nodeSortMode;
+      }
+      const query = String(state.nodeSearchQuery || "").trim().toLowerCase();
+      const filtered = Array.isArray(nodes) ? nodes.filter((node) => {
+        if (!query) return true;
+        const shortName = String(node.short_name || "").toLowerCase();
+        const longName = String(node.long_name || "").toLowerCase();
+        return shortName.includes(query) || longName.includes(query);
+      }) : [];
+
+      const sorted = [...filtered].sort((a, b) => {
+        function compareNames(nameA, nameB) {
+          const aText = String(nameA || "").trim().toLowerCase();
+          const bText = String(nameB || "").trim().toLowerCase();
+          if (!aText && bText) return 1;
+          if (aText && !bText) return -1;
+          if (aText < bText) return -1;
+          if (aText > bText) return 1;
+          return 0;
+        }
+
+        if (state.nodeSortMode === "last_heard") {
+          const aHeard = Number(a.last_heard || 0);
+          const bHeard = Number(b.last_heard || 0);
+          const aHas = Number.isFinite(aHeard) && aHeard > 0;
+          const bHas = Number.isFinite(bHeard) && bHeard > 0;
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          if (aHeard !== bHeard) return bHeard - aHeard;
+        } else if (state.nodeSortMode === "short_name") {
+          const cmpShort = compareNames(a.short_name, b.short_name);
+          if (cmpShort !== 0) return cmpShort;
+        } else if (state.nodeSortMode === "long_name") {
+          const cmpLong = compareNames(a.long_name, b.long_name);
+          if (cmpLong !== 0) return cmpLong;
+        }
+
+        const aLabel = nodeLabel(a).toLowerCase();
+        const bLabel = nodeLabel(b).toLowerCase();
+        if (aLabel < bLabel) return -1;
+        if (aLabel > bLabel) return 1;
+        return Number(a.num || 0) - Number(b.num || 0);
+      });
+      if (!sorted.length) {
+        container.innerHTML = query
+          ? '<div class="empty">No nodes match that search.</div>'
+          : '<div class="empty">No known nodes.</div>';
+        return;
+      }
+      container.innerHTML = sorted.map((node) => {
+        const num = Number(node.num);
+        const hasPos = hasCoord(node);
+        const active = num === state.selectedNodeNum ? "active" : "";
+        const locationText = hasPos ? "" : "No position";
+        const locationSuffix = locationText ? ` | ${escapeHtml(locationText)}` : "";
+        return `
+          <button class="list-item ${active}" type="button" data-node-num="${num}">
+            <span class="item-title">${escapeHtml(nodeLabel(node))}${hasPos ? "" : " (No position)"}</span>
+            <span class="item-meta">${escapeHtml(node.long_name || "Unknown")} | ${escapeHtml(prettyAge(node, nowSec))}</span>
+            <span class="item-meta">#${escapeHtml(node.num)} | ${escapeHtml(node.id || "-")}${locationSuffix}</span>
+          </button>
+        `;
+      }).join("");
+
+      for (const btn of container.querySelectorAll("button[data-node-num]")) {
+        btn.addEventListener("click", () => {
+          const nodeNum = Number(btn.dataset.nodeNum);
+          focusNode(nodeNum);
+        });
+      }
+    }
+
+    function scrollSelectedNodeListItemIntoView(options = {}) {
+      const clearFilterIfHidden = Boolean(options.clearFilterIfHidden);
+      let container = document.getElementById("nodeList");
+      if (!container) return;
+
+      let activeItem = container.querySelector("button[data-node-num].active");
+      if (!activeItem && clearFilterIfHidden && state.nodeSearchQuery) {
+        state.nodeSearchQuery = "";
+        if (nodeSearchInput.value) {
+          nodeSearchInput.value = "";
+        }
+        if (state.lastData) {
+          renderNodeList(state.lastData.nodes || []);
+          container = document.getElementById("nodeList");
+          if (!container) return;
+          activeItem = container.querySelector("button[data-node-num].active");
+        }
+      }
+
+      if (!activeItem) return;
+      activeItem.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+
+    function traceNodesWithCoords(trace) {
+      const coords = [];
+      for (const key of ["towards_nums", "back_nums"]) {
+        const route = Array.isArray(trace?.[key]) ? trace[key] : [];
+        for (const num of route) {
+          const node = state.nodeByNum.get(Number(num));
+          if (!node) continue;
+          if (typeof node.lat !== "number" || typeof node.lon !== "number") continue;
+          coords.push([node.lat, node.lon]);
+        }
+      }
+      return coords;
+    }
+
+    function routeToLabelPath(routeNums) {
+      const route = Array.isArray(routeNums) ? routeNums : [];
+      if (!route.length) return "-";
+      return route.map((rawNum) => {
+        const num = Number(rawNum);
+        const node = state.nodeByNum.get(num);
+        if (node) return nodeLabel(node);
+        if (Number.isFinite(num)) {
+          const shortFallback = shortNameFromNodeNum(num);
+          if (shortFallback) return shortFallback;
+          return String(num);
+        }
+        return "?";
+      }).join(" -> ");
+    }
+
+    function drawableSegmentCount(routeNums) {
+      const route = Array.isArray(routeNums) ? routeNums : [];
+      let count = 0;
+      for (let i = 0; i < route.length - 1; i += 1) {
+        const src = state.nodeByNum.get(Number(route[i]));
+        const dst = state.nodeByNum.get(Number(route[i + 1]));
+        if (hasCoord(src) && hasCoord(dst)) count += 1;
+      }
+      return count;
+    }
+
+    function traceTouchesNode(trace, nodeNum) {
+      const target = Number(nodeNum);
+      if (!Number.isFinite(target)) return false;
+      for (const key of ["towards_nums", "back_nums"]) {
+        const route = Array.isArray(trace?.[key]) ? trace[key] : [];
+        for (const rawNum of route) {
+          if (Number(rawNum) === target) return true;
+        }
+      }
+      for (const packetKey of ["from", "to"]) {
+        const num = Number(trace?.packet?.[packetKey]?.num);
+        if (Number.isFinite(num) && num === target) return true;
+      }
+      return false;
+    }
+
+    function recentTracesForNode(nodeNum, limit = 6) {
+      const maxItems = Math.max(1, Number(limit) || 6);
+      const traces = Array.isArray(state.lastData?.traces) ? state.lastData.traces : [];
+      const matches = [];
+      for (let i = traces.length - 1; i >= 0; i -= 1) {
+        const trace = traces[i];
+        if (!traceTouchesNode(trace, nodeNum)) continue;
+        matches.push(trace);
+        if (matches.length >= maxItems) break;
+      }
+      return matches;
+    }
+
+    function selectedTraceNodeNums() {
+      if (state.selectedTraceId === null) return null;
+      const trace = state.traceById.get(state.selectedTraceId);
+      if (!trace) return null;
+      const nodeNums = new Set();
+      for (const key of ["towards_nums", "back_nums"]) {
+        const route = Array.isArray(trace?.[key]) ? trace[key] : [];
+        for (const rawNum of route) {
+          const num = Number(rawNum);
+          if (Number.isFinite(num)) nodeNums.add(num);
+        }
+      }
+      for (const packetKey of ["from", "to"]) {
+        const num = Number(trace?.packet?.[packetKey]?.num);
+        if (Number.isFinite(num)) nodeNums.add(num);
+      }
+      return nodeNums;
+    }
+
+    function redrawFromLastServerData(options = {}) {
+      if (!state.lastServerData) return false;
+      const forceMap = Boolean(options.forceMap);
+      const traceFilterChanged = state.selectedTraceId !== state.lastDrawSelectedTraceId;
+      if (forceMap || traceFilterChanged) {
+        draw(state.lastServerData);
+        return true;
+      }
+      applyNodeSelectionVisual();
+      applyTraceSelectionVisual();
+      if (state.lastData) {
+        renderNodeList(state.lastData.nodes || []);
+        renderTraceList(state.lastData.traces || []);
+      }
+      renderSelectionDetails();
+      return true;
+    }
+
+    function renderSelectionDetails() {
+      if (state.selectedTraceId !== null) {
+        const trace = state.traceById.get(state.selectedTraceId);
+        if (!trace) {
+          if (traceDetailsNodeChat) traceDetailsNodeChat.classList.add("hidden");
+          traceDetails.classList.add("hidden");
+          traceDetailsBody.innerHTML = "";
+          return;
+        }
+        if (traceDetailsNodeChat) traceDetailsNodeChat.classList.add("hidden");
+
+        const originLabel = nodeFromRecord(trace?.packet?.to);
+        const targetLabel = nodeFromRecord(trace?.packet?.from);
+        const towardsNums = Array.isArray(trace?.towards_nums) ? trace.towards_nums : [];
+        const backNums = Array.isArray(trace?.back_nums) ? trace.back_nums : [];
+        const towardsHops = Math.max(0, towardsNums.length - 1);
+        const backHops = Math.max(0, backNums.length - 1);
+        const towardsDrawable = drawableSegmentCount(towardsNums);
+        const backDrawable = drawableSegmentCount(backNums);
+        const towardsSummary =
+          towardsDrawable < towardsHops
+            ? `${towardsHops} hops, ${towardsDrawable} drawable segments`
+            : `${towardsHops} hops`;
+        const backSummary =
+          backDrawable < backHops
+            ? `${backHops} hops, ${backDrawable} drawable segments`
+            : `${backHops} hops`;
+
+        traceDetailsTitle.textContent = "Traceroute Details";
+        traceDetailsBody.innerHTML = `
+          <span class="trace-meta-row"><span class="trace-label">Trace</span>#${escapeHtml(trace.trace_id)}</span>
+          <span class="trace-meta-row"><span class="trace-label">Time</span>${escapeHtml(trace.captured_at_utc || "-")}</span>
+          <span class="trace-meta-row"><span class="trace-label">Route</span>${escapeHtml(originLabel)} -> ${escapeHtml(targetLabel)}</span>
+          <span class="trace-meta-row"><span class="trace-label">Towards</span>${escapeHtml(towardsSummary)}</span>
+          <span class="trace-meta-row"><span class="trace-label">Return</span>${escapeHtml(backSummary)}</span>
+          <div class="trace-path">
+            <span class="trace-path-title">Outgoing Path (orange)</span>
+            <div class="trace-path-value">${escapeHtml(routeToLabelPath(towardsNums))}</div>
+          </div>
+          <div class="trace-path">
+            <span class="trace-path-title">Return Path (blue)</span>
+            <div class="trace-path-value">${escapeHtml(routeToLabelPath(backNums))}</div>
+          </div>
+        `;
+        traceDetails.classList.remove("hidden");
+        positionChatModal();
+        return;
+      }
+
+      if (state.selectedNodeNum !== null) {
+        const node = state.nodeByNum.get(state.selectedNodeNum);
+        if (!node) {
+          if (traceDetailsNodeChat) traceDetailsNodeChat.classList.add("hidden");
+          traceDetails.classList.add("hidden");
+          traceDetailsBody.innerHTML = "";
+          return;
+        }
+        if (traceDetailsNodeChat) traceDetailsNodeChat.classList.remove("hidden");
+
+        const nowSec = Date.now() / 1000;
+        const hasPos = hasCoord(node);
+        const locKind = node.estimated ? "estimated from traceroute" : hasPos ? "reported GPS" : "unknown";
+        const lat = hasPos ? node.lat.toFixed(5) : "-";
+        const lon = hasPos ? node.lon.toFixed(5) : "-";
+        const longName = node.long_name && String(node.long_name).trim() ? node.long_name : "Unknown node";
+        const canTraceNow = Boolean(state.lastServerData && state.lastServerData.connected);
+        const selectedNodeNum = Number(node.num);
+        const tracerouteControl = state.lastServerData && typeof state.lastServerData.traceroute_control === "object"
+          ? state.lastServerData.traceroute_control
+          : {};
+        const runningNodeNumRaw = tracerouteControl.running_node_num;
+        const runningNodeNum = runningNodeNumRaw === null || runningNodeNumRaw === undefined
+          ? NaN
+          : Number(runningNodeNumRaw);
+        const queuedNodeNums = Array.isArray(tracerouteControl.queued_node_nums)
+          ? tracerouteControl.queued_node_nums
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value))
+          : [];
+        const queueIndex = Number.isFinite(selectedNodeNum) ? queuedNodeNums.indexOf(selectedNodeNum) : -1;
+        const isRunningForNode = Number.isFinite(runningNodeNum) && runningNodeNum === selectedNodeNum;
+        const isQueuedForNode = queueIndex >= 0;
+        const isBusyForNode = isRunningForNode || isQueuedForNode;
+        const traceDisabled = (!canTraceNow || isBusyForNode) ? "disabled" : "";
+        const nodeRecentTraces = recentTracesForNode(selectedNodeNum, 8);
+        const rawSelectedNodeTab = String(state.selectedNodeDetailsTab || "").trim().toLowerCase();
+        if (rawSelectedNodeTab === "device" || rawSelectedNodeTab === "environment" || rawSelectedNodeTab === "power") {
+          state.selectedNodeTelemetryTab = rawSelectedNodeTab;
+        }
+        const selectedNodeTab = nodeDetailsTabValue(rawSelectedNodeTab);
+        const selectedTelemetryTab = nodeTelemetryTabValue(state.selectedNodeTelemetryTab);
+        const recentTraceSectionHtml = nodeRecentTraces.length
+          ? nodeRecentTraces.map((trace) => {
+              const traceId = Number(trace.trace_id);
+              const originLabel = nodeFromRecord(trace?.packet?.to);
+              const targetLabel = nodeFromRecord(trace?.packet?.from);
+              const fwdHops = Math.max(0, (trace.towards_nums || []).length - 1);
+              const backHops = Math.max(0, (trace.back_nums || []).length - 1);
+              return `
+                <button class="node-recent-item" type="button" data-recent-trace-id="${traceId}">
+                  <span class="node-recent-main">#${escapeHtml(traceId)} ${escapeHtml(originLabel)} -> ${escapeHtml(targetLabel)}</span>
+                  <span class="node-recent-meta">${escapeHtml(trace.captured_at_utc || "-")} | towards ${escapeHtml(fwdHops)} hops | back ${escapeHtml(backHops)} hops</span>
+                </button>
+              `;
+            }).join("")
+          : '<div class="node-recent-empty">No completed traceroutes for this node yet.</div>';
+        let traceHint = "";
+        if (!canTraceNow) {
+          traceHint = "Connect to a node to run traceroute.";
+        } else if (isRunningForNode) {
+          traceHint = "Traceroute running for this node...";
+        } else if (isQueuedForNode) {
+          traceHint = queueIndex === 0
+            ? "Traceroute queued for this node."
+            : `Traceroute queued for this node (position ${queueIndex + 1}).`;
+        }
+
+        const snrValue = Number(node.snr);
+        const snrText = Number.isFinite(snrValue)
+          ? `${Math.round(snrValue * 100) / 100} dB`
+          : "-";
+        const hopsAwayValue = Number(node.hops_away);
+        const hopsAwayText = Number.isFinite(hopsAwayValue)
+          ? String(Math.trunc(hopsAwayValue))
+          : "-";
+        const channelValue = Number(node.channel);
+        const channelText = Number.isFinite(channelValue)
+          ? String(Math.trunc(channelValue))
+          : "-";
+        const roleText = formatNodeRole(node.role);
+        const viaMqttText = formatNodeFlag(node.via_mqtt, { unknownText: "No" });
+        const favoriteText = formatNodeFlag(node.is_favorite, { unknownText: "No" });
+        const ignoredText = formatNodeFlag(node.is_ignored, { unknownText: "No" });
+        const mutedText = formatNodeFlag(node.is_muted, { unknownText: "No" });
+        const keyVerifiedText = formatNodeFlag(node.is_key_manually_verified, { unknownText: "No" });
+        const licensedText = formatNodeFlag(node.is_licensed, { unknownText: "No" });
+        const unmessagableText = formatNodeFlag(node.is_unmessagable, { unknownText: "No" });
+        const publicKeyText = formatNodePublicKey(node.public_key);
+        const publicKeyTitle = String(node.public_key || "").trim();
+
+        const tabItems = ["node_info", "traceroutes", "position", "telemetry"];
+        const tabButtonsHtml = tabItems.map((tabValue) => {
+          const activeClass = selectedNodeTab === tabValue ? "active" : "";
+          return `
+            <button
+              class="node-detail-tab-btn ${activeClass}"
+              type="button"
+              data-node-tab="${escapeHtml(tabValue)}"
+            >${escapeHtml(nodeDetailsTabLabel(tabValue))}</button>
+          `;
+        }).join("");
+
+        let tabBodyHtml = "";
+        if (selectedNodeTab === "node_info") {
+          const nodeInfoRequestStatus = telemetryRequestStatus(selectedNodeNum, "node_info");
+          const nodeInfoRequestBusy = Boolean(nodeInfoRequestStatus && nodeInfoRequestStatus.busy);
+          const nodeInfoRequestMessage = nodeInfoRequestStatus
+            ? String(nodeInfoRequestStatus.message || "")
+            : "";
+          const nodeInfoRequestError = Boolean(nodeInfoRequestStatus && nodeInfoRequestStatus.error);
+          const nodeInfoRows = [
+            { key: "Long Name", value: longName },
+            { key: "ID", value: node.id || "-" },
+            { key: "Hardware", value: node.hw_model || "-" },
+            { key: "Role", value: roleText },
+            { key: "Hops Away", value: hopsAwayText },
+            { key: "SNR", value: snrText },
+            { key: "Channel", value: channelText },
+            { key: "Via MQTT", value: viaMqttText },
+            { key: "Favorite", value: favoriteText },
+            { key: "Ignored", value: ignoredText },
+            { key: "Muted", value: mutedText },
+            { key: "Key Verified", value: keyVerifiedText },
+            { key: "Licensed", value: licensedText },
+            { key: "Unmessagable", value: unmessagableText },
+            { key: "Public Key", value: publicKeyText, title: publicKeyTitle },
+          ];
+          tabBodyHtml = `
+            <div class="node-tab-panel">
+              ${renderInfoRows(nodeInfoRows)}
+            </div>
+            <div class="trace-actions">
+              <button id="requestNodeInfoBtn" class="trace-action-btn" type="button" ${nodeInfoRequestBusy || !canTraceNow ? "disabled" : ""}>
+                ${escapeHtml(nodeInfoRequestBusy ? "Requesting Node Info..." : "Request Node Info")}
+              </button>
+              <span id="requestNodeInfoStatus" class="trace-action-status ${nodeInfoRequestError ? "error" : ""}">
+                ${escapeHtml(nodeInfoRequestMessage || (canTraceNow ? "" : "Connect to a node to request node info."))}
+              </span>
+            </div>
+          `;
+        } else if (selectedNodeTab === "traceroutes") {
+          tabBodyHtml = `
+            <div class="node-recent-traces">
+              <span class="node-recent-title">Recent Traceroutes</span>
+              ${recentTraceSectionHtml}
+            </div>
+            <div class="trace-actions">
+              <button id="traceNowBtn" class="trace-action-btn" type="button" ${traceDisabled}>Run Traceroute</button>
+              <span id="traceNowStatus" class="trace-action-status">${escapeHtml(traceHint)}</span>
+            </div>
+          `;
+        } else if (selectedNodeTab === "position") {
+          const positionRequestStatus = telemetryRequestStatus(selectedNodeNum, "position");
+          const positionRequestBusy = Boolean(positionRequestStatus && positionRequestStatus.busy);
+          const positionRequestMessage = positionRequestStatus
+            ? String(positionRequestStatus.message || "")
+            : "";
+          const positionRequestError = Boolean(positionRequestStatus && positionRequestStatus.error);
+          const positionRaw = node.position && typeof node.position === "object"
+            ? node.position
+            : {};
+          const positionData = {};
+          const hiddenPositionKeys = new Set([
+            "lat",
+            "lon",
+            "latitude",
+            "longitude",
+            "latitudei",
+            "longitudei",
+          ]);
+          for (const [rawKey, rawValue] of Object.entries(positionRaw)) {
+            const keyText = String(rawKey || "").trim();
+            const keyLower = keyText.toLowerCase();
+            const keyCompact = keyLower.replace(/_/g, "");
+            if (keyLower === "raw") continue;
+            if (hiddenPositionKeys.has(keyLower) || hiddenPositionKeys.has(keyCompact)) continue;
+            positionData[rawKey] = rawValue;
+          }
+          const positionUpdatedAt = String(node.position_updated_at_utc || "");
+          const positionSummaryRows = [
+            { key: "Source", value: locKind },
+            { key: "Latitude", value: lat },
+            { key: "Longitude", value: lon },
+            { key: "Last Heard UTC", value: formatEpochUtc(node.last_heard) },
+          ];
+
+          tabBodyHtml = `
+            <div class="node-tab-panel">
+              <div class="telemetry-updated">Last updated: ${escapeHtml(positionUpdatedAt || "-")}</div>
+              ${renderInfoRows(positionSummaryRows)}
+              ${renderTelemetryRows(positionData, { emptyMessage: "No position payload received yet." })}
+            </div>
+            <div class="trace-actions">
+              <button
+                id="requestPositionBtn"
+                class="trace-action-btn"
+                type="button"
+                ${positionRequestBusy || !canTraceNow ? "disabled" : ""}
+              >${escapeHtml(positionRequestBusy ? "Requesting Position..." : "Request Position")}</button>
+              <span id="requestPositionStatus" class="trace-action-status ${positionRequestError ? "error" : ""}">
+                ${escapeHtml(positionRequestMessage || (canTraceNow ? "" : "Connect to a node to request position."))}
+              </span>
+            </div>
+          `;
+        } else if (selectedNodeTab === "telemetry") {
+          const telemetryType = selectedTelemetryTab === "environment"
+            ? "environment"
+            : (selectedTelemetryTab === "power" ? "power" : "device");
+          const telemetryLabel = telemetryType === "environment"
+            ? "Environment"
+            : (telemetryType === "power" ? "Power" : "Device");
+          const telemetryButtonLabel = telemetryType === "environment"
+            ? "Request Environment Telemetry"
+            : (telemetryType === "power" ? "Request Power Telemetry" : "Request Device Telemetry");
+          const telemetryTabItems = ["device", "environment", "power"];
+          const telemetryTabButtonsHtml = telemetryTabItems.map((tabValue) => {
+            const activeClass = selectedTelemetryTab === tabValue ? "active" : "";
+            return `
+              <button
+                class="node-detail-tab-btn ${activeClass}"
+                type="button"
+                data-node-telemetry-tab="${escapeHtml(tabValue)}"
+              >${escapeHtml(nodeTelemetryTabLabel(tabValue))}</button>
+            `;
+          }).join("");
+          const telemetryData = telemetryType === "environment"
+            ? node.environment_telemetry
+            : (telemetryType === "power" ? node.power_telemetry : node.device_telemetry);
+          const telemetryUpdatedAt = telemetryType === "environment"
+            ? String(node.environment_telemetry_updated_at_utc || "")
+            : (telemetryType === "power"
+              ? String(node.power_telemetry_updated_at_utc || "")
+              : String(node.device_telemetry_updated_at_utc || ""));
+          const requestStatus = telemetryRequestStatus(selectedNodeNum, telemetryType);
+          const requestBusy = Boolean(requestStatus && requestStatus.busy);
+          const requestMessage = requestStatus ? String(requestStatus.message || "") : "";
+          const requestError = Boolean(requestStatus && requestStatus.error);
+
+          tabBodyHtml = `
+            <div class="node-detail-tabs">
+              ${telemetryTabButtonsHtml}
+            </div>
+            <div class="node-tab-panel">
+              <div class="telemetry-updated">Last updated: ${escapeHtml(telemetryUpdatedAt || "-")}</div>
+              ${renderTelemetryRows(telemetryData)}
+            </div>
+            <div class="trace-actions">
+              <button
+                id="requestTelemetryBtn"
+                class="trace-action-btn"
+                type="button"
+                data-telemetry-type="${escapeHtml(telemetryType)}"
+                ${requestBusy || !canTraceNow ? "disabled" : ""}
+              >${escapeHtml(requestBusy ? `Requesting ${telemetryLabel}...` : telemetryButtonLabel)}</button>
+              <span id="requestTelemetryStatus" class="trace-action-status ${requestError ? "error" : ""}">
+                ${escapeHtml(requestMessage || (canTraceNow ? "" : "Connect to a node to request telemetry."))}
+              </span>
+            </div>
+          `;
+        } else {
+          tabBodyHtml = `
+            <div class="node-tab-panel">
+              <div class="telemetry-empty">No details available for this tab.</div>
+            </div>
+          `;
+        }
+
+        const nodeSummaryRows = [
+          { key: "Name", value: nodeLabel(node) },
+          { key: "Node", value: `#${node.num || "?"}` },
+          { key: "Last Heard", value: prettyAge(node, nowSec) },
+          { key: "Last Heard UTC", value: formatEpochUtc(node.last_heard) },
+        ];
+        traceDetailsTitle.textContent = "Node Details";
+        traceDetailsBody.innerHTML = `
+          <div class="node-summary-panel">
+            ${renderInfoRows(nodeSummaryRows)}
+          </div>
+          <div class="node-detail-tabs">
+            ${tabButtonsHtml}
+          </div>
+          ${tabBodyHtml}
+        `;
+        for (const tabBtn of traceDetailsBody.querySelectorAll("button[data-node-tab]")) {
+          tabBtn.addEventListener("click", () => {
+            const tabValue = nodeDetailsTabValue(tabBtn.dataset.nodeTab);
+            if (state.selectedNodeDetailsTab === tabValue) return;
+            state.selectedNodeDetailsTab = tabValue;
+            renderSelectionDetails();
+          });
+        }
+        for (const telemetryTabBtn of traceDetailsBody.querySelectorAll("button[data-node-telemetry-tab]")) {
+          telemetryTabBtn.addEventListener("click", () => {
+            const tabValue = nodeTelemetryTabValue(telemetryTabBtn.dataset.nodeTelemetryTab);
+            if (state.selectedNodeTelemetryTab === tabValue && state.selectedNodeDetailsTab === "telemetry") return;
+            state.selectedNodeDetailsTab = "telemetry";
+            state.selectedNodeTelemetryTab = tabValue;
+            renderSelectionDetails();
+          });
+        }
+
+        if (selectedNodeTab === "node_info") {
+          const requestNodeInfoBtn = document.getElementById("requestNodeInfoBtn");
+          if (requestNodeInfoBtn) {
+            requestNodeInfoBtn.addEventListener("click", () => {
+              const nodeNum = Number(node.num);
+              if (!Number.isFinite(nodeNum)) return;
+              requestNodeInfo(nodeNum);
+            });
+          }
+        } else if (selectedNodeTab === "traceroutes") {
+          const traceNowBtn = document.getElementById("traceNowBtn");
+          const traceNowStatus = document.getElementById("traceNowStatus");
+          for (const btn of traceDetailsBody.querySelectorAll("button[data-recent-trace-id]")) {
+            btn.addEventListener("click", () => {
+              const traceId = Number(btn.dataset.recentTraceId);
+              if (!Number.isFinite(traceId)) return;
+              focusTrace(traceId);
+            });
+          }
+          if (traceNowBtn) {
+            traceNowBtn.addEventListener("click", async () => {
+              const nodeNum = Number(node.num);
+              if (!Number.isFinite(nodeNum)) return;
+              traceNowBtn.disabled = true;
+              let started = false;
+              if (traceNowStatus) {
+                traceNowStatus.textContent = "Starting traceroute...";
+                traceNowStatus.classList.remove("error");
+              }
+              try {
+                const { ok, body } = await apiPost("/api/traceroute", { node_num: nodeNum });
+                if (!ok) {
+                  const detail = body && (body.detail || body.error)
+                    ? String(body.detail || body.error)
+                    : "failed to start traceroute";
+                  if (traceNowStatus) {
+                    traceNowStatus.textContent = detail;
+                    traceNowStatus.classList.add("error");
+                  }
+                  return;
+                }
+                started = true;
+                const detail = body && body.detail ? String(body.detail) : "traceroute queued";
+                if (traceNowStatus) {
+                  traceNowStatus.textContent = detail;
+                  traceNowStatus.classList.remove("error");
+                }
+              } catch (e) {
+                const detail = String(e || "failed to start traceroute");
+                if (traceNowStatus) {
+                  traceNowStatus.textContent = detail;
+                  traceNowStatus.classList.add("error");
+                }
+              } finally {
+                traceNowBtn.disabled = started || !canTraceNow;
+              }
+              refresh();
+            });
+          }
+        } else if (selectedNodeTab === "position") {
+          const requestPositionBtn = document.getElementById("requestPositionBtn");
+          if (requestPositionBtn) {
+            requestPositionBtn.addEventListener("click", () => {
+              const nodeNum = Number(node.num);
+              if (!Number.isFinite(nodeNum)) return;
+              requestNodePosition(nodeNum);
+            });
+          }
+        } else if (selectedNodeTab === "telemetry") {
+          const requestBtn = document.getElementById("requestTelemetryBtn");
+          if (requestBtn) {
+            requestBtn.addEventListener("click", () => {
+              const nodeNum = Number(node.num);
+              const type = String(requestBtn.dataset.telemetryType || "");
+              if (!Number.isFinite(nodeNum) || !type) return;
+              requestNodeTelemetry(nodeNum, type);
+            });
+          }
+        }
+        traceDetails.classList.remove("hidden");
+        positionChatModal();
+        return;
+      }
+
+      if (traceDetailsNodeChat) traceDetailsNodeChat.classList.add("hidden");
+      traceDetails.classList.add("hidden");
+      traceDetailsBody.innerHTML = "";
+      positionChatModal();
+    }
+
+    function clearSelection() {
+      if (state.selectedTraceId === null && state.selectedNodeNum === null) return;
+      state.selectedTraceId = null;
+      state.selectedNodeNum = null;
+      if (redrawFromLastServerData()) return;
+      applyNodeSelectionVisual();
+      applyTraceSelectionVisual();
+      if (state.lastData) {
+        renderNodeList(state.lastData.nodes || []);
+        renderTraceList(state.lastData.traces || []);
+      }
+      renderSelectionDetails();
+    }
+
+    function renderTraceList(traces) {
+      const container = document.getElementById("traceList");
+      const recent = Array.isArray(traces) ? traces.slice().reverse() : [];
+      if (!recent.length) {
+        container.innerHTML = '<div class="empty">No completed traceroutes yet.</div>';
+        return;
+      }
+      container.innerHTML = recent.map((trace) => {
+        const traceId = Number(trace.trace_id);
+        const active = traceId === state.selectedTraceId ? "active" : "";
+        const originLabel = nodeFromRecord(trace?.packet?.to);
+        const targetLabel = nodeFromRecord(trace?.packet?.from);
+        const fwdHops = Math.max(0, (trace.towards_nums || []).length - 1);
+        const backHops = Math.max(0, (trace.back_nums || []).length - 1);
+        return `
+          <button class="list-item ${active}" type="button" data-trace-id="${traceId}">
+            <span class="item-title">#${escapeHtml(traceId)} ${escapeHtml(originLabel)} -> ${escapeHtml(targetLabel)}</span>
+            <span class="item-meta">${escapeHtml(trace.captured_at_utc || "-")}</span>
+            <span class="item-meta">towards: ${escapeHtml(fwdHops)} hops | back: ${escapeHtml(backHops)} hops</span>
+          </button>
+        `;
+      }).join("");
+
+      for (const btn of container.querySelectorAll("button[data-trace-id]")) {
+        btn.addEventListener("click", () => {
+          const traceId = Number(btn.dataset.traceId);
+          focusTrace(traceId);
+        });
+      }
+    }
+
+    function applyNodeSelectionVisual() {
+      for (const [num, marker] of state.markerByNum.entries()) {
+        const element = marker.getElement();
+        if (!element) continue;
+        const badge = element.querySelector(".node-badge");
+        if (!badge) continue;
+        badge.classList.toggle("node-selected", num === state.selectedNodeNum);
+      }
+    }
+
+    function collapseSpiderGroup(options = {}) {
+      const key = String(state.activeSpiderGroupKey || "");
+      if (!key) {
+        spiderLayer.clearLayers();
+        return;
+      }
+      const group = state.spiderGroups.get(key);
+      if (group && Array.isArray(group.markers)) {
+        for (const item of group.markers) {
+          if (!item || !item.marker) continue;
+          item.marker.setLatLng(group.centerLatLng);
+          item.marker.setZIndexOffset(0);
+        }
+      }
+      spiderLayer.clearLayers();
+      state.activeSpiderGroupKey = null;
+      if (!options.skipSelectionVisual) {
+        applyNodeSelectionVisual();
+      }
+    }
+
+    function expandSpiderGroup(coordKey) {
+      const key = String(coordKey || "");
+      if (!key) return false;
+      const group = state.spiderGroups.get(key);
+      if (!group || !Array.isArray(group.markers) || group.markers.length <= 1) return false;
+      if (state.activeSpiderGroupKey === key) return true;
+
+      collapseSpiderGroup({ skipSelectionVisual: true });
+
+      const targets = spiderLayoutLatLngs(group.centerLatLng, group.markers.length);
+      spiderLayer.clearLayers();
+      for (let i = 0; i < group.markers.length; i += 1) {
+        const item = group.markers[i];
+        const marker = item && item.marker ? item.marker : null;
+        if (!marker) continue;
+        const target = targets[i] || group.centerLatLng;
+        marker.setLatLng(target);
+        marker.setZIndexOffset(1000 + i);
+        L.polyline([group.centerLatLng, target], {
+          color: "#8fa7d0",
+          weight: 1.25,
+          opacity: 0.78,
+          dashArray: "2 4",
+          interactive: false,
+        }).addTo(spiderLayer);
+      }
+      state.activeSpiderGroupKey = key;
+      applyNodeSelectionVisual();
+      return true;
+    }
+
+    function handleMapMarkerClick(nodeNum, coordKey) {
+      const key = String(coordKey || "");
+      const group = key ? state.spiderGroups.get(key) : null;
+      const overlap = Boolean(group && Array.isArray(group.markers) && group.markers.length > 1);
+      const isExpanded = overlap && state.activeSpiderGroupKey === key;
+
+      if (overlap && !isExpanded) {
+        expandSpiderGroup(key);
+        return;
+      }
+      focusNode(nodeNum, { switchToNodesTab: true, scrollNodeListIntoView: true, panZoom: false });
+    }
+
+    function applyTraceSelectionVisual() {
+      const hasSelection = state.selectedTraceId !== null;
+      for (const [traceId, polylines] of state.edgePolylinesByTrace.entries()) {
+        for (const line of polylines) {
+          const direction = line.options.meshDirection === "back" ? "back" : "towards";
+          const baseColor = ROUTE_COLORS[direction];
+          if (!hasSelection) {
+            line.setStyle({ color: baseColor, weight: 3, opacity: 0.5 });
+            continue;
+          }
+          if (traceId === state.selectedTraceId) {
+            const selectedColor = ROUTE_SELECTED_COLORS[direction];
+            line.setStyle({ color: selectedColor, weight: 6, opacity: 0.98 });
+          } else {
+            // Hide non-selected traceroute lines entirely while a trace is selected.
+            line.setStyle({ color: baseColor, weight: 0, opacity: 0.0 });
+          }
+        }
+      }
+    }
+
+    function focusNode(nodeNum, options = {}) {
+      if (!Number.isFinite(nodeNum)) return;
+      const shouldScrollNodeList = Boolean(options.scrollNodeListIntoView || options.switchToNodesTab);
+      const shouldPanZoom = options.panZoom !== false;
+      state.selectedNodeNum = nodeNum;
+      state.selectedTraceId = null;
+      state.selectedNodeDetailsTab = "node_info";
+      if (options.switchToNodesTab) {
+        setActiveTab("nodes");
+      }
+      if (!redrawFromLastServerData()) {
+        applyNodeSelectionVisual();
+        applyTraceSelectionVisual();
+        if (state.lastData) {
+          renderNodeList(state.lastData.nodes || []);
+          renderTraceList(state.lastData.traces || []);
+        }
+        renderSelectionDetails();
+      }
+      if (shouldScrollNodeList) {
+        requestAnimationFrame(() => {
+          scrollSelectedNodeListItemIntoView({ clearFilterIfHidden: true });
+        });
+      }
+      if (!shouldPanZoom) return;
+      const marker = state.markerByNum.get(nodeNum);
+      if (!marker) return;
+      const ll = marker.getLatLng();
+      const zoom = Math.max(map.getZoom(), NODE_FOCUS_MIN_ZOOM);
+      map.flyTo(ll, zoom, { animate: true, duration: 0.35 });
+    }
+
+    function focusTrace(traceId) {
+      if (!Number.isFinite(traceId)) return;
+      state.selectedTraceId = traceId;
+      state.selectedNodeNum = null;
+      if (!redrawFromLastServerData()) {
+        applyNodeSelectionVisual();
+        applyTraceSelectionVisual();
+        if (state.lastData) {
+          renderNodeList(state.lastData.nodes || []);
+          renderTraceList(state.lastData.traces || []);
+        }
+        renderSelectionDetails();
+      }
+
+      const selectedLines = state.edgePolylinesByTrace.get(traceId) || [];
+      const bounds = [];
+      for (const line of selectedLines) {
+        for (const ll of line.getLatLngs()) {
+          bounds.push(ll);
+        }
+      }
+      if (!bounds.length) {
+        const trace = state.traceById.get(traceId);
+        if (trace) {
+          for (const coord of traceNodesWithCoords(trace)) {
+            bounds.push(L.latLng(coord[0], coord[1]));
+          }
+        }
+      }
+      if (bounds.length) {
+        map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: TRACE_FOCUS_MAX_ZOOM });
+      }
+    }
+
+    function addTracePathSegments(traceId, routeNums, direction) {
+      let count = 0;
+      const route = Array.isArray(routeNums) ? routeNums : [];
+      if (route.length < 2) return count;
+      const directionSign = direction === "back" ? -1 : 1;
+
+      for (let i = 0; i < route.length - 1; i += 1) {
+        const src = state.nodeByNum.get(Number(route[i]));
+        const dst = state.nodeByNum.get(Number(route[i + 1]));
+        if (!hasCoord(src) || !hasCoord(dst)) continue;
+
+        const segmentMeters = segmentDistanceMeters(src.lat, src.lon, dst.lat, dst.lon);
+        const baseOffset = Math.max(
+          ROUTE_OFFSET_MIN_METERS,
+          Math.min(ROUTE_OFFSET_MAX_METERS, segmentMeters * ROUTE_OFFSET_SCALE)
+        );
+        const jitter = ((Math.abs(traceId) % 7) - 3) * Math.max(1, baseOffset * ROUTE_OFFSET_JITTER_SCALE);
+        const segmentOffset = directionSign * (baseOffset + jitter);
+
+        const pathPoints = offsetSegment(src.lat, src.lon, dst.lat, dst.lon, segmentOffset);
+        const color = ROUTE_COLORS[direction];
+        const polyline = L.polyline(pathPoints, {
+          color,
+          weight: 3,
+          opacity: 0.55,
+          meshDirection: direction,
+        }).addTo(edgeLayer);
+        if (!state.edgePolylinesByTrace.has(traceId)) {
+          state.edgePolylinesByTrace.set(traceId, []);
+        }
+        state.edgePolylinesByTrace.get(traceId).push(polyline);
+        count += 1;
+      }
+
+      return count;
+    }
+
+    function draw(data) {
+      state.lastServerData = data;
+      state.nodeByNum = estimateNodePositions(data.nodes || [], data.traces || []);
+      state.traceById.clear();
+      for (const trace of data.traces || []) {
+        state.traceById.set(Number(trace.trace_id), trace);
+      }
+      if (state.selectedTraceId !== null && !state.traceById.has(state.selectedTraceId)) {
+        state.selectedTraceId = null;
+      }
+      if (state.selectedNodeNum !== null && !state.nodeByNum.has(state.selectedNodeNum)) {
+        state.selectedNodeNum = null;
+      }
+
+      const previousSpiderKey = String(state.activeSpiderGroupKey || "");
+      collapseSpiderGroup({ skipSelectionVisual: true });
+      markerLayer.clearLayers();
+      edgeLayer.clearLayers();
+      spiderLayer.clearLayers();
+      state.markerByNum.clear();
+      state.edgePolylinesByTrace.clear();
+      state.spiderGroups.clear();
+
+      const bounds = [];
+      const nowSec = Date.now() / 1000;
+      const displayNodes = Array.from(state.nodeByNum.values());
+      const visibleTraceNodes = selectedTraceNodeNums();
+      const overlapGroups = new Map();
+
+      for (const node of displayNodes) {
+        if (!hasCoord(node)) continue;
+        const nodeNum = Number(node.num);
+        if (visibleTraceNodes !== null && !visibleTraceNodes.has(nodeNum)) continue;
+        const ll = [node.lat, node.lon];
+        bounds.push(ll);
+        const labelText = nodeLabel(node);
+        const label = escapeHtml(labelText);
+        const cssClass = nodeClass(node, nowSec, data && data.config);
+        const width = Math.max(30, Math.min(92, 18 + labelText.length * 9));
+        const height = 30;
+        const icon = L.divIcon({
+          className: "",
+          html: `<div class="node-badge ${cssClass}">${label}</div>`,
+          iconSize: [width, height],
+          iconAnchor: [width / 2, height / 2],
+          popupAnchor: [0, -14],
+        });
+        const marker = L.marker(ll, { icon, riseOnHover: true, keyboard: false }).addTo(markerLayer);
+        const coordKey = nodeCoordKey(node);
+        if (coordKey) {
+          if (!overlapGroups.has(coordKey)) {
+            overlapGroups.set(coordKey, {
+              centerLatLng: L.latLng(node.lat, node.lon),
+              markers: [],
+            });
+          }
+          overlapGroups.get(coordKey).markers.push({
+            nodeNum,
+            marker,
+          });
+        }
+        marker.on("click", () => {
+          handleMapMarkerClick(nodeNum, coordKey);
+        });
+        state.markerByNum.set(nodeNum, marker);
+      }
+
+      for (const [coordKey, group] of overlapGroups.entries()) {
+        if (!group || !Array.isArray(group.markers) || group.markers.length <= 1) continue;
+        group.markers.sort((a, b) => Number(a.nodeNum) - Number(b.nodeNum));
+        state.spiderGroups.set(coordKey, group);
+      }
+      if (previousSpiderKey && state.spiderGroups.has(previousSpiderKey)) {
+        expandSpiderGroup(previousSpiderKey);
+      }
+
+      for (const trace of data.traces || []) {
+        const traceId = Number(trace.trace_id);
+        if (!Number.isFinite(traceId)) continue;
+        addTracePathSegments(traceId, trace.towards_nums || [], "towards");
+        addTracePathSegments(traceId, trace.back_nums || [], "back");
+      }
+
+      const viewData = {
+        ...data,
+        nodes: displayNodes,
+      };
+      state.lastData = viewData;
+
+      updateConnectionUi(data);
+      updateConfigUi(data);
+      updateFreshnessLegend(data && data.config);
+      updateQueueManageButton(data);
+      const nodeTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "nodes");
+      if (nodeTab) nodeTab.textContent = `Nodes (${String(displayNodes.length)})`;
+      const traceTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "traces");
+      if (traceTab) traceTab.textContent = `Traces (${String(data.trace_count || 0)})`;
+      document.getElementById("updated").textContent = data.generated_at_utc || "-";
+
+      renderLogs(data.logs || []);
+      renderNodeList(displayNodes);
+      renderTraceList(data.traces || []);
+      applyNodeSelectionVisual();
+      applyTraceSelectionVisual();
+      renderSelectionDetails();
+      renderChatPanel(data);
+      state.lastDrawSelectedTraceId = state.selectedTraceId;
+
+      if (!state.fitted && bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [24, 24] });
+        state.fitted = true;
+      }
+    }
+
+    function applySnapshot(data, options = {}) {
+      const force = Boolean(options.force);
+      const snapshotRevision = snapshotRevisionOf(data);
+      if (!force && state.lastSnapshotRevision > 0 && snapshotRevision <= state.lastSnapshotRevision) {
+        return;
+      }
+
+      const mapRevision = mapRevisionOf(data);
+      const styleSignature = mapStyleSignatureOf(data);
+      const mapChanged = (
+        force
+        || !state.lastData
+        || mapRevision !== state.lastMapRevision
+        || styleSignature !== state.lastMapStyleSignature
+      );
+      const logsRevision = logRevisionOf(data);
+      const chatRevision = chatRevisionFromData(data);
+      const chatChanged = force || chatRevision !== state.lastChatRevision;
+      state.lastServerData = data;
+
+      if (mapChanged) {
+        draw(data);
+        state.lastMapRevision = mapRevision;
+        state.lastMapStyleSignature = styleSignature;
+        state.lastLogRevision = logsRevision;
+      } else {
+        const displayNodes = Array.isArray(state.lastData?.nodes) ? state.lastData.nodes : [];
+        state.lastData = { ...data, nodes: displayNodes };
+
+        updateConnectionUi(data);
+        updateConfigUi(data);
+        updateFreshnessLegend(data && data.config);
+        updateQueueManageButton(data);
+        const nodeTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "nodes");
+        if (nodeTab) nodeTab.textContent = `Nodes (${String(displayNodes.length)})`;
+        const traceTab = tabButtons.find((btn) => (btn.dataset.tab || "") === "traces");
+        if (traceTab) traceTab.textContent = `Traces (${String(data.trace_count || 0)})`;
+        document.getElementById("updated").textContent = data.generated_at_utc || "-";
+
+        if (logsRevision !== state.lastLogRevision) {
+          renderLogs(data.logs || []);
+          state.lastLogRevision = logsRevision;
+        }
+        renderSelectionDetails();
+        renderChatPanel(data);
+      }
+
+      if (queueModal && !queueModal.classList.contains("hidden")) {
+        renderQueueModal(data);
+      }
+      state.lastChatRevision = chatRevision;
+      if (state.chatOpen && chatChanged) {
+        loadChatMessages({ force: true });
+      }
+      state.lastSnapshotRevision = Math.max(state.lastSnapshotRevision, snapshotRevision);
+    }
+
+    function updateConnectionUi(data) {
+      const connected = Boolean(data && data.connected);
+      const connState = String((data && data.connection_state) || "");
+      const host = (data && data.connected_host) ? String(data.connected_host) : "";
+      const partition = (data && data.mesh_host) ? String(data.mesh_host) : "";
+      const error = (data && data.connection_error) ? String(data.connection_error) : "";
+
+      let label = "Not connected";
+      if (connected) {
+        label = host ? `Connected to ${host}` : "Connected";
+      } else if (connState === "connecting") {
+        label = host ? `Connecting to ${host}...` : "Connecting...";
+      } else if (connState === "error") {
+        label = "Connection error";
+      }
+      if (partition && partition !== "-" && partition !== "disconnected") {
+        label += ` (${partition})`;
+      }
+      document.getElementById("meshHost").textContent = label;
+
+      onboarding.classList.toggle("hidden", connected);
+      disconnectBtn.style.display = connected ? "inline-block" : "none";
+
+      const isConnecting = connState === "connecting";
+      connectBtn.disabled = isConnecting;
+      connectHostInput.disabled = isConnecting;
+      connectBtn.textContent = isConnecting ? "Connecting..." : "Connect";
+
+      if (!connected && error) {
+        connectError.textContent = error;
+        connectError.classList.add("visible");
+      } else {
+        connectError.textContent = "";
+        connectError.classList.remove("visible");
+      }
+
+      renderDiscovery(data && data.discovery);
+
+      if (connected) {
+        connectStatus.textContent = "";
+        state.promptedConnect = false;
+        return;
+      }
+
+      if (isConnecting) {
+        connectStatus.textContent = host ? `Connecting to ${host}...` : "Connecting...";
+      } else {
+        connectStatus.textContent = "Meshtracer runs locally and connects to your node over TCP on your LAN.";
+      }
+
+      if (!connected && !state.promptedConnect) {
+        state.promptedConnect = true;
+        try {
+          connectHostInput.focus();
+          connectHostInput.select();
+        } catch (_e) {
+        }
+      }
+    }
+
+    function renderDiscovery(discovery) {
+      if (!discoverySection || !discoveryMeta || !discoveryList || !discoveryRescan) return;
+
+      const enabled = Boolean(discovery && discovery.enabled);
+      const scanning = Boolean(discovery && discovery.scanning);
+      const networks = Array.isArray(discovery && discovery.networks) ? discovery.networks : [];
+      const port = Number((discovery && discovery.port) || 4403);
+      const candidates = Array.isArray(discovery && discovery.candidates) ? discovery.candidates : [];
+      const done = Number((discovery && discovery.progress_done) || 0);
+      const total = Number((discovery && discovery.progress_total) || 0);
+      const lastScanUtc = String((discovery && discovery.last_scan_utc) || "");
+
+      discoveryRescan.disabled = !enabled || scanning;
+
+      if (!enabled) {
+        discoveryMeta.textContent = "Auto-discovery is disabled.";
+        discoveryList.innerHTML = '<div class="discovery-empty">Enter a node IP/hostname above, or start Meshtracer with discovery enabled.</div>';
+        return;
+      }
+
+      const metaParts = [];
+      if (scanning) {
+        metaParts.push(total > 0 ? `Scanning ${done}/${total}...` : "Scanning...");
+      } else if (lastScanUtc) {
+        metaParts.push(`Last scan: ${lastScanUtc}`);
+      }
+      if (networks.length) metaParts.push(`Networks: ${networks.join(", ")}`);
+      if (Number.isFinite(port) && port > 0) metaParts.push(`Port: ${port}`);
+      discoveryMeta.textContent = metaParts.join(" | ") || "Searching your LAN...";
+
+      if (!candidates.length) {
+        const hint = scanning
+          ? "No nodes found yet."
+          : "No nodes found. Make sure your computer and node are on the same network, and that the node's TCP interface is reachable.";
+        discoveryList.innerHTML = `<div class="discovery-empty">${escapeHtml(hint)}</div>`;
+        return;
+      }
+
+      discoveryList.innerHTML = candidates.map((item) => {
+        const host = String((item && item.host) || "").trim();
+        if (!host) return "";
+        const itemPort = Number((item && item.port) || port);
+        const latency = item && item.latency_ms !== undefined && item.latency_ms !== null
+          ? `${item.latency_ms}ms`
+          : "";
+        const seen = item && item.last_seen_utc ? `seen ${item.last_seen_utc}` : "";
+        const meta = [seen, latency].filter(Boolean).join(" | ") || "reachable";
+        return `
+          <div class="discovery-item">
+            <div class="discovery-item-main">
+              <span class="discovery-item-host">${escapeHtml(host)}${itemPort ? ":" + escapeHtml(itemPort) : ""}</span>
+              <span class="discovery-item-meta">${escapeHtml(meta)}</span>
+            </div>
+            <button class="discovery-item-btn" type="button" data-host="${escapeHtml(host)}">Connect</button>
+          </div>
+        `;
+      }).join("");
+
+      for (const btn of discoveryList.querySelectorAll("button[data-host]")) {
+        btn.addEventListener("click", () => {
+          const host = String(btn.dataset.host || "").trim();
+          if (!host) return;
+          connectToHost(host);
+        });
+      }
+    }
+
+    function setCfgStatus(message, options = {}) {
+      const isError = Boolean(options.error);
+      const text = String(message || "").trim();
+      if (!cfgStatus) return;
+      cfgStatus.textContent = text;
+      cfgStatus.classList.toggle("visible", Boolean(text));
+      cfgStatus.classList.toggle("error", isError);
+    }
+
+    function markConfigDirty() {
+      state.configDirty = true;
+      setCfgStatus("Unsaved changes.", { error: false });
+    }
+
+    function normalizeIntervalMinutes(raw, fallback = 5) {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed <= 0) return Number(fallback);
+      return Math.round(parsed * 1000) / 1000;
+    }
+
+    function intervalOptionLabel(minutesRaw) {
+      const minutes = normalizeIntervalMinutes(minutesRaw, 5);
+      if (minutes < 1) {
+        const seconds = Math.max(1, Math.round(minutes * 60));
+        return `${seconds} seconds`;
+      }
+      const rounded = Math.round(minutes * 1000) / 1000;
+      const text = Number.isInteger(rounded) ? String(Math.trunc(rounded)) : String(rounded);
+      return `${text} minute${rounded === 1 ? "" : "s"}`;
+    }
+
+    function setIntervalSelectValue(rawMinutes) {
+      if (!cfgInterval) return;
+      const normalized = normalizeIntervalMinutes(rawMinutes, 5);
+      const value = String(normalized);
+      let hasOption = false;
+      for (const opt of Array.from(cfgInterval.options || [])) {
+        if (String(opt.value || "").trim() === value) {
+          hasOption = true;
+          break;
+        }
+      }
+      if (!hasOption) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = intervalOptionLabel(normalized);
+        cfgInterval.appendChild(opt);
+      }
+      cfgInterval.value = value;
+    }
+
+    function normalizeRetentionHours(raw, fallback = 720) {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed <= 0) return Math.trunc(Number(fallback));
+      return Math.trunc(parsed);
+    }
+
+    function retentionOptionLabel(hoursRaw) {
+      const hours = normalizeRetentionHours(hoursRaw, 720);
+      if (hours % 24 === 0) {
+        const days = Math.trunc(hours / 24);
+        return `${days} day${days === 1 ? "" : "s"}`;
+      }
+      return `${hours} hour${hours === 1 ? "" : "s"}`;
+    }
+
+    function setRetentionSelectValue(rawHours) {
+      if (!cfgTracerouteRetentionHours) return;
+      const normalized = normalizeRetentionHours(rawHours, 720);
+      const value = String(normalized);
+      let hasOption = false;
+      for (const opt of Array.from(cfgTracerouteRetentionHours.options || [])) {
+        if (String(opt.value || "").trim() === value) {
+          hasOption = true;
+          break;
+        }
+      }
+      if (!hasOption) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = retentionOptionLabel(normalized);
+        cfgTracerouteRetentionHours.appendChild(opt);
+      }
+      cfgTracerouteRetentionHours.value = value;
+    }
+
+    function applyConfigToForm(config) {
+      if (!config) return;
+      if (cfgTracerouteBehavior) {
+        const behavior = String(config.traceroute_behavior ?? "automatic").trim().toLowerCase();
+        cfgTracerouteBehavior.value = behavior === "automatic" ? "automatic" : "manual";
+      }
+      setIntervalSelectValue(config.interval ?? 5);
+      if (cfgHeardWindow) cfgHeardWindow.value = String(config.heard_window ?? "");
+      if (cfgFreshWindow) cfgFreshWindow.value = String(config.fresh_window ?? "");
+      if (cfgMidWindow) cfgMidWindow.value = String(config.mid_window ?? "");
+      if (cfgHopLimit) cfgHopLimit.value = String(config.hop_limit ?? "");
+      setRetentionSelectValue(config.traceroute_retention_hours ?? 720);
+      if (cfgWebhookUrl) cfgWebhookUrl.value = String(config.webhook_url ?? "");
+      state.configTokenSet = Boolean(config.webhook_api_token_set);
+      state.configTokenTouched = false;
+      if (cfgWebhookToken) {
+        cfgWebhookToken.value = "";
+        cfgWebhookToken.placeholder = state.configTokenSet
+          ? "Saved token is hidden. Type a new value to replace; leave blank to keep."
+          : "Optional token";
+      }
+    }
+
+    function updateConfigUi(data) {
+      const config = data && typeof data.config === "object" ? data.config : null;
+      const defaults = data && typeof data.config_defaults === "object" ? data.config_defaults : null;
+      const server = data && typeof data.server === "object" ? data.server : null;
+
+      if (defaults && !state.configDefaults) {
+        state.configDefaults = defaults;
+      }
+      if (server) {
+        if (cfgDbPath) cfgDbPath.textContent = String(server.db_path || "-");
+        if (cfgUiBind) cfgUiBind.textContent = `${String(server.map_host || "-")}:${String(server.map_port || "-")}`;
+      }
+
+      if (!config) return;
+      if (!state.configLoaded || !state.configDirty) {
+        applyConfigToForm(config);
+        state.configLoaded = true;
+        if (!state.configDirty) {
+          setCfgStatus("", { error: false });
+        }
+      }
+    }
+
+    async function apiPost(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+      });
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (_e) {
+      }
+      return { ok: response.ok, status: response.status, body };
+    }
+
+    async function applyConfig() {
+      function asInt(value, fallback) {
+        const n = Number(String(value || "").trim());
+        if (!Number.isFinite(n)) return fallback;
+        return Math.trunc(n);
+      }
+
+      function asFloat(value, fallback) {
+        const n = Number(String(value || "").trim());
+        if (!Number.isFinite(n) || n <= 0) return fallback;
+        return n;
+      }
+
+      const payload = {
+        traceroute_behavior: String(cfgTracerouteBehavior?.value || "automatic").trim().toLowerCase(),
+        interval: asFloat(cfgInterval?.value, 5),
+        heard_window: asInt(cfgHeardWindow?.value, 120),
+        fresh_window: asInt(cfgFreshWindow?.value, 120),
+        mid_window: asInt(cfgMidWindow?.value, 480),
+        hop_limit: asInt(cfgHopLimit?.value, 7),
+        traceroute_retention_hours: asInt(cfgTracerouteRetentionHours?.value, 720),
+        webhook_url: String(cfgWebhookUrl?.value || "").trim() || null,
+      };
+      if (state.configTokenTouched) {
+        payload.webhook_api_token = String(cfgWebhookToken?.value || "").trim() || null;
+      }
+
+      setCfgStatus("Applying...", { error: false });
+      if (cfgApply) cfgApply.disabled = true;
+      try {
+        const { ok, body } = await apiPost("/api/config", payload);
+        if (!ok) {
+          const detail = body && (body.detail || body.error) ? String(body.detail || body.error) : "config update failed";
+          setCfgStatus(detail, { error: true });
+          return;
+        }
+        state.configDirty = false;
+        setCfgStatus("Applied.", { error: false });
+        if (body && body.config) {
+          applyConfigToForm(body.config);
+        }
+      } catch (e) {
+        setCfgStatus(String(e || "config update failed"), { error: true });
+      } finally {
+        if (cfgApply) cfgApply.disabled = false;
+      }
+      refresh();
+    }
+
+    function resetConfig() {
+      const defaults = state.configDefaults || {
+        traceroute_behavior: "automatic",
+        interval: 5,
+        heard_window: 120,
+        fresh_window: 120,
+        mid_window: 480,
+        hop_limit: 7,
+        traceroute_retention_hours: 720,
+        webhook_url: null,
+        webhook_api_token: null,
+      };
+      applyConfigToForm(defaults);
+      state.configTokenTouched = true;
+      markConfigDirty();
+      setCfgStatus("Reset to defaults (not applied).", { error: false });
+    }
+
+    async function resetDatabase() {
+      const confirmed = window.confirm(
+        "This will permanently delete ALL data in the Meshtracer database and disconnect from the current node. Continue?"
+      );
+      if (!confirmed) return;
+
+      setCfgStatus("Resetting database...", { error: false });
+      if (cfgResetDatabase) cfgResetDatabase.disabled = true;
+      if (cfgApply) cfgApply.disabled = true;
+      if (cfgReset) cfgReset.disabled = true;
+
+      try {
+        const { ok, body } = await apiPost("/api/database/reset", {});
+        if (!ok) {
+          const detail = body && (body.detail || body.error)
+            ? String(body.detail || body.error)
+            : "database reset failed";
+          setCfgStatus(detail, { error: true });
+          return;
+        }
+        state.configDirty = false;
+        state.configLoaded = false;
+        state.telemetryRequestState = {};
+        setCfgStatus("Database reset complete. Disconnected.", { error: false });
+      } catch (e) {
+        setCfgStatus(String(e || "database reset failed"), { error: true });
+      } finally {
+        if (cfgResetDatabase) cfgResetDatabase.disabled = false;
+        if (cfgApply) cfgApply.disabled = false;
+        if (cfgReset) cfgReset.disabled = false;
+      }
+
+      refresh({ force: true });
+    }
+
+    const HELP_COPY = {
+      traceroute_behavior: {
+        title: "Traceroute Behaviour",
+        body: `Manual: Meshtracer only runs traceroutes you queue from the node details panel.
+
+Automatic: Meshtracer continuously selects eligible recent nodes and runs traceroutes on an interval.`,
+      },
+      interval: {
+        title: "Interval / Timeout Basis",
+        body: `How often Meshtracer attempts a traceroute in Automatic mode.
+
+This is also the basis for Meshtastic per-hop timeout tuning. A lower interval (like 30 seconds) gives faster cadence but tighter timeout windows.`,
+      },
+      heard_window: {
+        title: "Heard Window (minutes)",
+        body: `Only nodes heard within this many minutes are eligible as traceroute targets.
+
+Larger values include more nodes (including stale ones). Smaller values focus on recently-active nodes.`,
+      },
+      fresh_window: {
+        title: "Fresh Window (minutes)",
+        body: `Nodes heard within this many minutes are shown as Fresh (green) in the map legend.`,
+      },
+      mid_window: {
+        title: "Mid Window (minutes)",
+        body: `Nodes heard within this many minutes are shown as Mid (yellow). Older nodes are Stale (red).
+
+Must be >= Fresh Window.`,
+      },
+      hop_limit: {
+        title: "Hop Limit",
+        body: `The maximum hop count used for Meshtastic traceroute.
+
+Higher values can discover longer routes but may take longer. Meshtracer derives an internal per-hop timeout from (interval / hop_limit).`,
+      },
+      traceroute_retention_hours: {
+        title: "Delete traceroutes older than",
+        body: `Completed traceroutes older than this age are deleted from SQLite.
+
+Meshtracer displays all stored traceroutes from the database; this setting controls how long history is retained.`,
+      },
+      webhook_url: {
+        title: "Webhook URL",
+        body: `Optional URL to POST structured JSON when a traceroute completes.
+
+Leave blank to disable webhooks.`,
+      },
+      webhook_api_token: {
+        title: "Webhook API Token",
+        body: `Optional token added to webhook requests.
+
+Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank for no auth.`,
+      },
+    };
+
+    let lastConfigFocus = null;
+    function openConfig() {
+      if (!configModal) return;
+      lastConfigFocus = document.activeElement;
+      configModal.classList.remove("hidden");
+      try {
+        if (configClose) configClose.focus();
+      } catch (_e) {
+      }
+    }
+
+    function closeConfig() {
+      if (!configModal) return;
+      configModal.classList.add("hidden");
+      try {
+        if (configOpen) {
+          configOpen.focus();
+        } else if (lastConfigFocus && typeof lastConfigFocus.focus === "function") {
+          lastConfigFocus.focus();
+        }
+      } catch (_e) {
+      }
+      lastConfigFocus = null;
+    }
+
+    function openHelp(helpId) {
+      const key = String(helpId || "").trim();
+      const entry = HELP_COPY[key];
+      if (!entry || !helpModal || !helpTitle || !helpBody) return;
+      helpTitle.textContent = String(entry.title || "Help");
+      helpBody.textContent = String(entry.body || "");
+      helpModal.classList.remove("hidden");
+      try {
+        helpClose.focus();
+      } catch (_e) {
+      }
+    }
+
+    function closeHelp() {
+      if (!helpModal) return;
+      helpModal.classList.add("hidden");
+    }
+
+    async function connectToHost(hostOverride) {
+      const host = String((hostOverride !== undefined ? hostOverride : connectHostInput.value) || "").trim();
+      if (!host) {
+        connectError.textContent = "Enter a node IP or hostname.";
+        connectError.classList.add("visible");
+        return;
+      }
+      if (hostOverride !== undefined) {
+        connectHostInput.value = host;
+      }
+      try {
+        localStorage.setItem("meshtracer.lastHost", host);
+      } catch (_e) {
+      }
+      connectError.textContent = "";
+      connectError.classList.remove("visible");
+      connectBtn.disabled = true;
+      connectHostInput.disabled = true;
+      try {
+        const { ok, body } = await apiPost("/api/connect", { host });
+        if (!ok) {
+          const detail = body && (body.detail || body.error) ? String(body.detail || body.error) : "connect failed";
+          connectError.textContent = detail;
+          connectError.classList.add("visible");
+        }
+      } catch (e) {
+        connectError.textContent = String(e || "connect failed");
+        connectError.classList.add("visible");
+      } finally {
+        connectBtn.disabled = false;
+        connectHostInput.disabled = false;
+      }
+      refresh();
+    }
+
+    async function disconnectFromHost() {
+      try {
+        await apiPost("/api/disconnect", {});
+      } catch (_e) {
+      }
+      refresh();
+    }
+
+    async function rescanDiscovery() {
+      discoveryRescan.disabled = true;
+      try {
+        await apiPost("/api/discovery/rescan", {});
+      } catch (_e) {
+      }
+      refresh();
+    }
+
+    try {
+      const savedHost = localStorage.getItem("meshtracer.lastHost");
+      if (savedHost && !connectHostInput.value) {
+        connectHostInput.value = String(savedHost);
+      }
+    } catch (_e) {
+    }
+
+    connectBtn.addEventListener("click", () => connectToHost());
+    disconnectBtn.addEventListener("click", () => disconnectFromHost());
+    discoveryRescan.addEventListener("click", () => rescanDiscovery());
+    if (manageTraceQueueBtn) manageTraceQueueBtn.addEventListener("click", () => openQueueModal());
+    if (cfgApply) cfgApply.addEventListener("click", () => applyConfig());
+    if (cfgReset) cfgReset.addEventListener("click", () => resetConfig());
+    if (cfgResetDatabase) cfgResetDatabase.addEventListener("click", () => resetDatabase());
+    if (configOpen) configOpen.addEventListener("click", () => openConfig());
+    if (configOverlay) configOverlay.addEventListener("click", () => closeConfig());
+    if (configClose) configClose.addEventListener("click", () => closeConfig());
+    if (helpOverlay) helpOverlay.addEventListener("click", () => closeHelp());
+    if (helpClose) helpClose.addEventListener("click", () => closeHelp());
+    if (queueOverlay) queueOverlay.addEventListener("click", () => closeQueueModal());
+    if (queueClose) queueClose.addEventListener("click", () => closeQueueModal());
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      if (helpModal && !helpModal.classList.contains("hidden")) {
+        closeHelp();
+        return;
+      }
+      if (queueModal && !queueModal.classList.contains("hidden")) {
+        closeQueueModal();
+        return;
+      }
+      if (chatModal && !chatModal.classList.contains("hidden")) {
+        closeChat();
+        return;
+      }
+      if (configModal && !configModal.classList.contains("hidden")) {
+        closeConfig();
+      }
+    });
+    for (const btn of document.querySelectorAll("button[data-help]")) {
+      btn.addEventListener("click", () => openHelp(btn.dataset.help));
+    }
+    for (const el of [
+      cfgTracerouteBehavior,
+      cfgInterval,
+      cfgHeardWindow,
+      cfgFreshWindow,
+      cfgMidWindow,
+      cfgHopLimit,
+      cfgTracerouteRetentionHours,
+      cfgWebhookUrl,
+    ]) {
+      if (!el) continue;
+      el.addEventListener("input", () => markConfigDirty());
+      el.addEventListener("change", () => markConfigDirty());
+      el.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          applyConfig();
+        }
+      });
+    }
+    if (cfgWebhookToken) {
+      cfgWebhookToken.addEventListener("input", () => {
+        state.configTokenTouched = true;
+        markConfigDirty();
+      });
+      cfgWebhookToken.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          applyConfig();
+        }
+      });
+    }
+    connectHostInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        connectToHost();
+      }
+    });
+
+    async function refresh(options = {}) {
+      if (state.refreshInFlight) return;
+      state.refreshInFlight = true;
+      try {
+        const response = await fetch("/api/map", { cache: "no-store" });
+        if (!response.ok) {
+          reportClientError(`GET /api/map failed (HTTP ${response.status})`, { prefix: "Network" });
+          return;
+        }
+        const data = await response.json();
+        applySnapshot(data, options);
+      } catch (e) {
+        reportClientError(String(e || "refresh failed"), { prefix: "UI error" });
+      } finally {
+        state.refreshInFlight = false;
+      }
+    }
+
+    function startEventStream() {
+      if (typeof EventSource !== "function") {
+        reportClientError("EventSource is not available in this browser; using polling fallback.", { prefix: "Realtime" });
+        return;
+      }
+      if (state.sseSource) {
+        try {
+          state.sseSource.close();
+        } catch (_e) {
+        }
+        state.sseSource = null;
+      }
+      const since = Math.max(0, Number(state.lastSnapshotRevision) || 0);
+      const streamUrl = `/api/events?since=${encodeURIComponent(String(since))}`;
+      const stream = new EventSource(streamUrl);
+      state.sseSource = stream;
+
+      stream.addEventListener("open", () => {
+        state.sseConnected = true;
+        state.lastSseEventAtMs = Date.now();
+      });
+
+      stream.addEventListener("heartbeat", () => {
+        state.sseConnected = true;
+        state.lastSseEventAtMs = Date.now();
+      });
+
+      stream.addEventListener("snapshot", (event) => {
+        state.sseConnected = true;
+        state.lastSseEventAtMs = Date.now();
+        let data = null;
+        try {
+          data = JSON.parse(String(event && event.data ? event.data : "{}"));
+        } catch (e) {
+          reportClientError(String(e || "invalid snapshot event"), { prefix: "Realtime" });
+          return;
+        }
+        if (!data || typeof data !== "object") return;
+        applySnapshot(data);
+      });
+
+      stream.onerror = () => {
+        const staleMs = Date.now() - state.lastSseEventAtMs;
+        if (!Number.isFinite(staleMs) || staleMs > FALLBACK_POLL_MS_DISCONNECTED) {
+          state.sseConnected = false;
+        }
+      };
+    }
+
+    refresh({ force: true });
+    startEventStream();
+    setInterval(() => {
+      if (state.sseConnected) return;
+      refresh();
+    }, FALLBACK_POLL_MS_DISCONNECTED);
+    setInterval(() => {
+      refresh();
+    }, FALLBACK_POLL_MS_CONNECTED);

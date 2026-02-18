@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meshtracer Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div id="map"></div>
+  <section id="onboarding" class="onboarding hidden" aria-label="Connect to Meshtastic node">
+    <div class="onboarding-card">
+      <div class="onboarding-brand">Meshtracer</div>
+      <div class="onboarding-tagline">
+        Enter the IP address or hostname of your WiFi-connected Meshtastic node to start tracing and populating the map.
+      </div>
+      <div class="onboarding-form">
+        <label class="onboarding-label" for="connectHost">Node IP or hostname</label>
+        <div class="onboarding-row">
+          <input id="connectHost" type="text" inputmode="decimal" placeholder="192.168.1.50" autocomplete="off" spellcheck="false">
+          <button id="connectBtn" class="connect-btn" type="button">Connect</button>
+        </div>
+        <div id="connectError" class="connect-error"></div>
+        <div class="onboarding-help">
+          Examples:
+          <code>192.168.1.50</code>
+          <code>meshtastic.local</code>
+        </div>
+        <div id="connectStatus" class="connect-status"></div>
+        <div id="discoverySection" class="discovery">
+          <div class="discovery-head">
+            <div class="discovery-title">Discovered Nodes</div>
+            <button id="discoveryRescan" class="discovery-rescan" type="button">Rescan</button>
+          </div>
+          <div id="discoveryMeta" class="discovery-meta"></div>
+          <div id="discoveryList" class="discovery-list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section id="traceDetails" class="hidden" aria-live="polite">
+    <div class="trace-head">
+      <div id="traceDetailsTitle" class="trace-title">Details</div>
+      <div class="trace-head-actions">
+        <button id="traceDetailsNodeChat" class="icon-btn trace-head-chat hidden" type="button" aria-label="Message node">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 11c1.7 0 3-1.6 3-3.5S17.7 4 16 4s-3 1.6-3 3.5 1.3 3.5 3 3.5z"></path>
+            <path d="M8 12c2.2 0 4-2 4-4.5S10.2 3 8 3 4 5 4 7.5 5.8 12 8 12z"></path>
+            <path d="M2 21v-1c0-2.8 2.2-5 5-5h2"></path>
+            <path d="M12 21v-1c0-2.2 1.8-4 4-4h1c2.2 0 4 1.8 4 4v1"></path>
+          </svg>
+        </button>
+        <button id="traceDetailsClose" type="button" aria-label="Clear selection">X</button>
+      </div>
+    </div>
+    <div id="traceDetailsBody"></div>
+  </section>
+  <section id="chatModal" class="hidden" aria-live="polite">
+    <div class="chat-head">
+      <div class="chat-title">Chat</div>
+      <button id="chatClose" type="button" aria-label="Close chat">X</button>
+    </div>
+    <div class="chat-body">
+      <div class="chat-recipient">
+        <label class="chat-recipient-label" for="chatRecipient">Recipient</label>
+        <select id="chatRecipient"></select>
+      </div>
+      <div id="chatRecipientWarning" class="chat-warning"></div>
+      <div id="chatMessages"></div>
+      <div id="chatStatus" class="chat-status"></div>
+      <div class="chat-compose">
+        <input id="chatInput" type="text" autocomplete="off" spellcheck="false" placeholder="Type a message...">
+        <button id="chatSend" type="button">Send</button>
+      </div>
+    </div>
+  </section>
+
+  <aside id="sidebar">
+    <div id="sidebarResize" aria-hidden="true"></div>
+    <button id="sidebarToggle" type="button" aria-label="Collapse sidebar">></button>
+    <div id="sidebarShell">
+      <div id="sidebarHeader">
+        <div class="head-row">
+          <div class="head-title">Meshtracer</div>
+          <div class="head-actions">
+            <div id="updated" class="head-updated">-</div>
+            <button id="chatOpen" class="icon-btn" type="button" aria-label="Open chat">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M16 11c1.7 0 3-1.6 3-3.5S17.7 4 16 4s-3 1.6-3 3.5 1.3 3.5 3 3.5z"></path>
+                <path d="M8 12c2.2 0 4-2 4-4.5S10.2 3 8 3 4 5 4 7.5 5.8 12 8 12z"></path>
+                <path d="M2 21v-1c0-2.8 2.2-5 5-5h2"></path>
+                <path d="M12 21v-1c0-2.2 1.8-4 4-4h1c2.2 0 4 1.8 4 4v1"></path>
+              </svg>
+            </button>
+            <button id="configOpen" class="icon-btn" type="button" aria-label="Open config">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="mesh-host-row">
+          <div id="meshHost" class="mesh-host">-</div>
+          <button id="disconnectBtn" class="disconnect-btn" type="button" style="display:none">Disconnect</button>
+        </div>
+        <div id="clientError" class="client-error"></div>
+        <div class="legend">
+          <span><span class="dot dot-fresh"></span><span id="legendFreshText">Fresh</span></span>
+          <span><span class="dot dot-mid"></span><span id="legendMidText">Mid</span></span>
+          <span><span class="dot dot-stale"></span><span id="legendStaleText">Stale</span></span>
+        </div>
+      </div>
+
+      <div id="tabs">
+        <button type="button" class="tab-btn active" data-tab="log">Log</button>
+        <button type="button" class="tab-btn" data-tab="nodes">Nodes</button>
+        <button type="button" class="tab-btn" data-tab="traces">Traces</button>
+      </div>
+
+      <div id="panels">
+        <section class="panel active" data-panel="log">
+          <div id="logList" class="scroll-list"></div>
+        </section>
+        <section class="panel nodes-panel" data-panel="nodes">
+          <div class="nodes-search-wrap">
+            <div class="nodes-controls">
+              <div class="nodes-control search-only">
+                <input id="nodeSearch" type="search" placeholder="Search short/long name..." autocomplete="off" spellcheck="false">
+              </div>
+              <div class="nodes-control">
+                <label class="nodes-control-label" for="nodeSort">Sort</label>
+                <select id="nodeSort">
+                  <option value="last_heard">Last heard</option>
+                  <option value="short_name">Short name</option>
+                  <option value="long_name">Long name</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div id="nodeList" class="scroll-list"></div>
+        </section>
+        <section class="panel traces-panel" data-panel="traces">
+          <div class="traces-toolbar">
+            <button id="manageTraceQueueBtn" class="trace-action-btn trace-manage-btn" type="button">Manage traceroute queue</button>
+          </div>
+          <div id="traceList" class="scroll-list"></div>
+        </section>
+      </div>
+    </div>
+  </aside>
+
+  <section id="configModal" class="config-modal hidden" aria-label="Config" role="dialog" aria-modal="true">
+    <div id="configOverlay" class="config-overlay" aria-hidden="true"></div>
+    <div class="config-card" role="document">
+      <div class="config-head">
+        <div class="config-title">Config</div>
+        <button id="configClose" class="config-close" type="button" aria-label="Close config">X</button>
+      </div>
+      <div class="config-body">
+        <div class="cfg-section">
+          <div class="cfg-title">Traceroute</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgTracerouteBehavior">Traceroute Behaviour</label>
+                <button type="button" class="cfg-help" data-help="traceroute_behavior" aria-label="Help for traceroute behaviour">?</button>
+              </div>
+              <select id="cfgTracerouteBehavior" class="cfg-input">
+                <option value="automatic">Automatic</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgInterval">Interval / Timeout Basis</label>
+                <button type="button" class="cfg-help" data-help="interval" aria-label="Help for interval">?</button>
+              </div>
+              <select id="cfgInterval" class="cfg-input">
+                <option value="5">5 minutes</option>
+                <option value="0.5">30 seconds</option>
+                <option value="1">1 minute</option>
+                <option value="2">2 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+              </select>
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgHeardWindow">Heard Window (minutes)</label>
+                <button type="button" class="cfg-help" data-help="heard_window" aria-label="Help for heard window">?</button>
+              </div>
+              <input id="cfgHeardWindow" class="cfg-input" type="number" min="1" step="1">
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgHopLimit">Hop Limit</label>
+                <button type="button" class="cfg-help" data-help="hop_limit" aria-label="Help for hop limit">?</button>
+              </div>
+              <input id="cfgHopLimit" class="cfg-input" type="number" min="1" step="1">
+            </div>
+          </div>
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-title">UI</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgFreshWindow">Fresh Window (minutes)</label>
+                <button type="button" class="cfg-help" data-help="fresh_window" aria-label="Help for fresh window">?</button>
+              </div>
+              <input id="cfgFreshWindow" class="cfg-input" type="number" min="1" step="1">
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgMidWindow">Mid Window (minutes)</label>
+                <button type="button" class="cfg-help" data-help="mid_window" aria-label="Help for mid window">?</button>
+              </div>
+              <input id="cfgMidWindow" class="cfg-input" type="number" min="1" step="1">
+            </div>
+          </div>
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-title">Storage</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgTracerouteRetentionHours">Delete traceroutes older than</label>
+                <button type="button" class="cfg-help" data-help="traceroute_retention_hours" aria-label="Help for traceroute retention">?</button>
+              </div>
+              <select id="cfgTracerouteRetentionHours" class="cfg-input">
+                <option value="1">1 hour</option>
+                <option value="6">6 hours</option>
+                <option value="12">12 hours</option>
+                <option value="24">24 hours</option>
+                <option value="168">7 days</option>
+                <option value="336">14 days</option>
+                <option value="720" selected>30 days</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-title">Webhook</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgWebhookUrl">Webhook URL</label>
+                <button type="button" class="cfg-help" data-help="webhook_url" aria-label="Help for webhook url">?</button>
+              </div>
+              <input id="cfgWebhookUrl" class="cfg-input" type="text" placeholder="https://example.com/hook">
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-label-row">
+                <label class="cfg-label" for="cfgWebhookToken">Webhook API Token</label>
+                <button type="button" class="cfg-help" data-help="webhook_api_token" aria-label="Help for webhook api token">?</button>
+              </div>
+              <input id="cfgWebhookToken" class="cfg-input" type="password" placeholder="(optional)">
+            </div>
+          </div>
+        </div>
+
+        <div class="cfg-actions">
+          <button id="cfgApply" class="cfg-btn" type="button">Apply</button>
+          <button id="cfgReset" class="cfg-btn secondary" type="button">Reset</button>
+          <button id="cfgResetDatabase" class="cfg-btn danger" type="button">Reset Database</button>
+        </div>
+        <div id="cfgStatus" class="cfg-status"></div>
+        <div class="cfg-readonly">
+          <div>Server settings are controlled by CLI args and require restart.</div>
+          <div>DB: <code id="cfgDbPath">-</code></div>
+          <div>UI bind: <code id="cfgUiBind">-</code></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="helpModal" class="help-modal hidden" aria-label="Help" role="dialog" aria-modal="true">
+    <div id="helpOverlay" class="help-overlay" aria-hidden="true"></div>
+    <div class="help-card" role="document">
+      <div class="help-head">
+        <div id="helpTitle" class="help-title">Help</div>
+        <button id="helpClose" class="help-close" type="button" aria-label="Close help">X</button>
+      </div>
+      <div id="helpBody" class="help-body"></div>
+    </div>
+  </section>
+
+  <section id="queueModal" class="queue-modal hidden" aria-label="Traceroute Queue" role="dialog" aria-modal="true">
+    <div id="queueOverlay" class="queue-overlay" aria-hidden="true"></div>
+    <div class="queue-card" role="document">
+      <div class="queue-head">
+        <div class="queue-title">Traceroute Queue</div>
+        <button id="queueClose" class="queue-close" type="button" aria-label="Close traceroute queue">X</button>
+      </div>
+      <div class="queue-body">
+        <div id="queueSummary" class="queue-summary">Queue is empty.</div>
+        <div id="queueStatus" class="queue-status"></div>
+        <div id="queueList" class="queue-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

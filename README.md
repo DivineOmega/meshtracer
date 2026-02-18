@@ -329,7 +329,8 @@ Payload fields include:
 - `meshtracer.py`: launcher entrypoint
 - `meshtracer_app/app.py`: controller, worker loop, connection and command handling
 - `meshtracer_app/cli.py`: CLI parsing
-- `meshtracer_app/map_server.py`: HTTP API + embedded frontend HTML/JS/CSS
+- `meshtracer_app/map_server.py`: HTTP API + static asset serving
+- `meshtracer_app/static/`: frontend `index.html`, `app.css`, `app.js`
 - `meshtracer_app/state.py`: map state/revisioning/log buffer
 - `meshtracer_app/storage.py`: SQLite schema + persistence
 - `meshtracer_app/discovery.py`: LAN discovery scanner
