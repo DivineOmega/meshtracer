@@ -39,34 +39,48 @@ Default web UI address: `http://127.0.0.1:8090/`
 - Meshtastic node reachable by IP/hostname over TCP.
 - Python dependencies from `requirements.txt` (currently pins `meshtastic==2.7.7`).
 
-## Setup
+## Quick Start
+
+Clone + install:
 
 ```bash
-cd /path/to/meshtracer
+git clone https://github.com/Jord-JD/meshtracer.git
+cd meshtracer
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Quick Start
-
-Web UI mode (default):
+Start locally (UI bound to localhost):
 
 ```bash
-source .venv/bin/activate
-python meshtracer.py
+source .venv/bin/activate && python meshtracer.py
 ```
 
-Web UI mode with startup auto-connect:
+Start locally with startup auto-connect to a Meshtastic node:
 
 ```bash
-python meshtracer.py <NODE_IP_OR_HOST>
+source .venv/bin/activate && python meshtracer.py <NODE_IP_OR_HOST>
+```
+
+Host UI for access from other devices on your LAN:
+
+```bash
+source .venv/bin/activate && python meshtracer.py --map-host 0.0.0.0 --map-port 8090 --no-open
+```
+
+Then open `http://<THIS_MACHINE_LAN_IP>:8090/` from another device on the same network.
+
+Host UI on LAN and auto-connect to a Meshtastic node:
+
+```bash
+source .venv/bin/activate && python meshtracer.py <NODE_IP_OR_HOST> --map-host 0.0.0.0 --map-port 8090 --no-open
 ```
 
 Terminal-only mode (no web UI; host required):
 
 ```bash
-python meshtracer.py <NODE_IP_OR_HOST> --no-web
+source .venv/bin/activate && python meshtracer.py <NODE_IP_OR_HOST> --no-web
 ```
 
 Stop with `Ctrl+C`.
