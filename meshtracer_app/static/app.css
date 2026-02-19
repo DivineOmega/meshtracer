@@ -38,7 +38,8 @@ body.sidebar-resizing {
   z-index: 1100;
   top: 12px;
   right: 12px;
-  bottom: 12px;
+  height: calc(100% - 24px);
+  max-height: calc(100% - 24px);
   width: min(390px, calc(100vw - 24px));
   min-width: 300px;
   background: var(--panel);
@@ -47,11 +48,23 @@ body.sidebar-resizing {
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(3px);
   overflow: hidden;
-  transition: width 0.15s ease;
+  transition:
+    width 0.15s ease,
+    height 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 #sidebar.collapsed {
   width: 42px !important;
   min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  background: transparent;
+  overflow: hidden;
 }
 #sidebarResize {
   position: absolute;
@@ -87,9 +100,14 @@ body.sidebar-resizing {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
 }
 #sidebar.collapsed #sidebarShell {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 #sidebarHeader {
