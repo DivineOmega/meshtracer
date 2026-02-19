@@ -2180,9 +2180,16 @@
         return;
       }
       container.innerHTML = filtered.map((entry) => {
+        const messageText = String(entry && entry.message ? entry.message : "");
         const streamClass = entry && entry.stream === "stderr" ? "stderr" : "";
         const logType = logTypeFromEntry(entry);
-        return `<div class="log-entry ${streamClass} log-${escapeHtml(logType)}">${escapeHtml(entry.message || "")}</div>`;
+        const tracerouteSuccessClass = (
+          logType === "traceroute"
+          && messageText.toLowerCase().includes("traceroute complete")
+        )
+          ? " traceroute-success"
+          : "";
+        return `<div class="log-entry ${streamClass} log-${escapeHtml(logType)}${tracerouteSuccessClass}">${escapeHtml(messageText)}</div>`;
       }).join("");
       if (stickToBottom) {
         container.scrollTop = container.scrollHeight;

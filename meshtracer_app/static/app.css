@@ -1205,6 +1205,11 @@ body.sidebar-resizing {
   background: #2d1620;
   color: #f3c4d1;
 }
+.log-entry.traceroute-success {
+  border-color: #2f6b46;
+  background: #10291a;
+  color: #c9f7d8;
+}
 .log-entry.log-traceroute {
   border-left: 3px solid #f59e0b;
 }

@@ -76,6 +76,8 @@ Stop with `Ctrl+C`.
   - Channel labels from interface channel metadata when available (including modem-preset style names such as `LongFast` for primary channel); fallback labels are used when unavailable.
   - Clickable sender node labels to jump to node details.
   - Repeated identical message text is supported.
+- Runtime log stream with backend-assigned message types (`traceroute`, `telemetry`, `position`, `node_info`, `other`) and per-type filters in the Log tab.
+- Traceroute log emphasis: failures are highlighted in red and completion messages are highlighted in green.
 - Runtime config modal with persisted settings.
 - Optional webhook POST on completed traceroutes with parsed route payload.
 - Realtime updates over SSE with polling fallback.
@@ -191,6 +193,7 @@ Main areas:
   - `Log`
   - `Nodes` (search + sort)
   - `Traces`
+- Log tab supports type filters (`Traceroute`, `Telemetry`, `Position`, `Node Info`, `Other`) and remembers choices in browser local storage.
 - Map canvas with node markers and trace lines.
 - Top-left details panel for selected trace/node.
 - Chat modal.
