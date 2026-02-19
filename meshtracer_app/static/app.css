@@ -501,6 +501,18 @@ body.sidebar-resizing {
 .panel.nodes-panel.active {
   display: flex;
 }
+.log-panel {
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.panel.log-panel.active {
+  display: flex;
+}
+.log-panel #logList.scroll-list {
+  flex: 1;
+  height: auto;
+}
 .traces-panel {
   flex-direction: column;
   min-height: 0;
@@ -1111,6 +1123,44 @@ body.sidebar-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.log-toolbar {
+  border-bottom: 1px solid #253756;
+  padding: 8px 12px;
+  background: rgba(11, 20, 40, 0.6);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.log-toolbar-label {
+  color: #9db0d2;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.log-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #c9d7f3;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid #2b3f63;
+  border-radius: 999px;
+  background: rgba(13, 23, 46, 0.7);
+  padding: 3px 9px;
+}
+.log-filter input {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  accent-color: #6fa6ff;
+}
+.log-filter input:not(:checked) + span {
+  opacity: 0.72;
+}
 
 .log-entry {
   border: 1px solid #263a5e;
@@ -1129,6 +1179,21 @@ body.sidebar-resizing {
   border-color: #6f3a4d;
   background: #2d1620;
   color: #f3c4d1;
+}
+.log-entry.log-traceroute {
+  border-left: 3px solid #f59e0b;
+}
+.log-entry.log-telemetry {
+  border-left: 3px solid #64d2ff;
+}
+.log-entry.log-position {
+  border-left: 3px solid #34d399;
+}
+.log-entry.log-node_info {
+  border-left: 3px solid #a78bfa;
+}
+.log-entry.log-other {
+  border-left: 3px solid #64748b;
 }
 
 .node-badge {

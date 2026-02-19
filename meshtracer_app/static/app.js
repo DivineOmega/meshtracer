@@ -33,6 +33,12 @@
     const legendStaleText = document.getElementById("legendStaleText");
     const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
     const tabPanels = Array.from(document.querySelectorAll(".panel"));
+    const logList = document.getElementById("logList");
+    const logFilterTraceroute = document.getElementById("logFilterTraceroute");
+    const logFilterTelemetry = document.getElementById("logFilterTelemetry");
+    const logFilterPosition = document.getElementById("logFilterPosition");
+    const logFilterNodeInfo = document.getElementById("logFilterNodeInfo");
+    const logFilterOther = document.getElementById("logFilterOther");
     const onboarding = document.getElementById("onboarding");
     const connectHostInput = document.getElementById("connectHost");
     const connectBtn = document.getElementById("connectBtn");
@@ -99,6 +105,13 @@
       spiderGroups: new Map(),
       activeSpiderGroupKey: null,
       activeTab: "log",
+      logTypeFilters: {
+        traceroute: true,
+        telemetry: true,
+        position: true,
+        node_info: true,
+        other: true,
+      },
       nodeSearchQuery: "",
       nodeSortMode: "last_heard",
       promptedConnect: false,
@@ -122,6 +135,7 @@
     };
     const FALLBACK_POLL_MS_CONNECTED = 30000;
     const FALLBACK_POLL_MS_DISCONNECTED = 3000;
+    const LOG_FILTER_STORAGE_KEY = "meshtracer.logTypeFilters";
 
     function reportClientError(message, options = {}) {
       const text = String(message || "").trim();
@@ -687,6 +701,18 @@
         renderNodeList(state.lastData.nodes || []);
       }
     });
+    for (const [key, input] of [
+      ["traceroute", logFilterTraceroute],
+      ["telemetry", logFilterTelemetry],
+      ["position", logFilterPosition],
+      ["node_info", logFilterNodeInfo],
+      ["other", logFilterOther],
+    ]) {
+      if (!input) continue;
+      input.addEventListener("change", () => {
+        setLogTypeFilter(key, Boolean(input.checked));
+      });
+    }
     if (chatRecipient) {
       chatRecipient.addEventListener("change", () => {
         const value = String(chatRecipient.value || "");
@@ -2084,17 +2110,79 @@
       return nodeMap;
     }
 
+    function normalizedLogTypeFilters(raw) {
+      const source = raw && typeof raw === "object" ? raw : {};
+      return {
+        traceroute: source.traceroute !== false,
+        telemetry: source.telemetry !== false,
+        position: source.position !== false,
+        node_info: source.node_info !== false,
+        other: source.other !== false,
+      };
+    }
+
+    function logTypeFromEntry(entry) {
+      const rawType = String(
+        (entry && (entry.type || entry.log_type))
+          ? (entry.type || entry.log_type)
+          : ""
+      )
+        .trim()
+        .toLowerCase()
+        .replace(/[-\s]+/g, "_");
+      if (rawType === "traceroute") return "traceroute";
+      if (rawType === "telemetry") return "telemetry";
+      if (rawType === "position") return "position";
+      if (rawType === "node_info") return "node_info";
+      return "other";
+    }
+
+    function syncLogFilterControls() {
+      if (logFilterTraceroute) logFilterTraceroute.checked = Boolean(state.logTypeFilters.traceroute);
+      if (logFilterTelemetry) logFilterTelemetry.checked = Boolean(state.logTypeFilters.telemetry);
+      if (logFilterPosition) logFilterPosition.checked = Boolean(state.logTypeFilters.position);
+      if (logFilterNodeInfo) logFilterNodeInfo.checked = Boolean(state.logTypeFilters.node_info);
+      if (logFilterOther) logFilterOther.checked = Boolean(state.logTypeFilters.other);
+    }
+
+    function persistLogTypeFilters() {
+      try {
+        localStorage.setItem(LOG_FILTER_STORAGE_KEY, JSON.stringify(state.logTypeFilters));
+      } catch (_e) {
+      }
+    }
+
+    function setLogTypeFilter(key, enabled) {
+      const normalized = normalizedLogTypeFilters(state.logTypeFilters);
+      if (!(key in normalized)) return;
+      normalized[key] = Boolean(enabled);
+      state.logTypeFilters = normalized;
+      syncLogFilterControls();
+      persistLogTypeFilters();
+      const logs = Array.isArray(state.lastServerData && state.lastServerData.logs)
+        ? state.lastServerData.logs
+        : [];
+      renderLogs(logs);
+    }
+
     function renderLogs(logs) {
-      const container = document.getElementById("logList");
+      const container = logList;
+      if (!container) return;
       const entries = Array.isArray(logs) ? logs : [];
       const stickToBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 24;
       if (!entries.length) {
         container.innerHTML = '<div class="empty">No runtime logs yet.</div>';
         return;
       }
-      container.innerHTML = entries.map((entry) => {
+      const filtered = entries.filter((entry) => Boolean(state.logTypeFilters[logTypeFromEntry(entry)]));
+      if (!filtered.length) {
+        container.innerHTML = '<div class="empty">No logs match the selected type filters.</div>';
+        return;
+      }
+      container.innerHTML = filtered.map((entry) => {
         const streamClass = entry && entry.stream === "stderr" ? "stderr" : "";
-        return `<div class="log-entry ${streamClass}">${escapeHtml(entry.message || "")}</div>`;
+        const logType = logTypeFromEntry(entry);
+        return `<div class="log-entry ${streamClass} log-${escapeHtml(logType)}">${escapeHtml(entry.message || "")}</div>`;
       }).join("");
       if (stickToBottom) {
         container.scrollTop = container.scrollHeight;
@@ -3699,6 +3787,17 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
       }
     } catch (_e) {
     }
+    try {
+      const rawLogFilters = localStorage.getItem(LOG_FILTER_STORAGE_KEY);
+      if (rawLogFilters) {
+        state.logTypeFilters = normalizedLogTypeFilters(JSON.parse(String(rawLogFilters)));
+      } else {
+        state.logTypeFilters = normalizedLogTypeFilters(state.logTypeFilters);
+      }
+    } catch (_e) {
+      state.logTypeFilters = normalizedLogTypeFilters(state.logTypeFilters);
+    }
+    syncLogFilterControls();
 
     connectBtn.addEventListener("click", () => connectToHost());
     disconnectBtn.addEventListener("click", () => disconnectFromHost());

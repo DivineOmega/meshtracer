@@ -18,7 +18,7 @@ from .controller_packets import ControllerPacketMixin
 from .controller_worker import ControllerWorkerMixin
 from .discovery import LanDiscoverer
 from .map_server import start_map_server
-from .state import MapState, RuntimeLogBuffer
+from .state import MapState, RuntimeLogBuffer, normalize_runtime_log_type
 from .storage import SQLiteStore
 
 
@@ -29,14 +29,42 @@ class MeshTracerController(
     ControllerConnectionMixin,
     ControllerWorkerMixin,
 ):
+    def _emit_typed(self, message: str, *, log_type: str = "other") -> None:
+        normalized_type = normalize_runtime_log_type(log_type)
+        try:
+            self._emit(message, log_type=normalized_type)
+            return
+        except TypeError:
+            pass
+        try:
+            self._emit(message, normalized_type)
+            return
+        except TypeError:
+            pass
+        self._emit(message)
+
+    def _emit_error_typed(self, message: str, *, log_type: str = "other") -> None:
+        normalized_type = normalize_runtime_log_type(log_type)
+        try:
+            self._emit_error(message, log_type=normalized_type)
+            return
+        except TypeError:
+            pass
+        try:
+            self._emit_error(message, normalized_type)
+            return
+        except TypeError:
+            pass
+        self._emit_error(message)
+
     def __init__(
         self,
         *,
         args: Any,
         store: SQLiteStore,
         log_buffer: RuntimeLogBuffer,
-        emit: Callable[[str], None],
-        emit_error: Callable[[str], None],
+        emit: Callable[..., None],
+        emit_error: Callable[..., None],
     ) -> None:
         self._args = args
         self._store = store
@@ -62,7 +90,7 @@ class MeshTracerController(
         self._connected_host: str | None = None
         self._connection_state: str = "disconnected"  # disconnected | connecting | connected | error
         self._connection_error: str | None = None
-        self._discovery = LanDiscoverer()
+        self._discovery = LanDiscoverer(on_change=self._bump_snapshot_revision)
         self._discovery.set_enabled(False)
         self._config: dict[str, Any] = deepcopy(DEFAULT_RUNTIME_CONFIG)
         persisted_config: dict[str, Any] | None = None
@@ -101,12 +129,12 @@ def main() -> int:
     args = parse_args()
     log_buffer = RuntimeLogBuffer(max_entries=3000)
 
-    def emit(message: str) -> None:
-        log_buffer.add(message, stream="stdout")
+    def emit(message: str, log_type: str = "other") -> None:
+        log_buffer.add(message, stream="stdout", log_type=log_type)
         print(message, file=sys.stdout, flush=True)
 
-    def emit_error(message: str) -> None:
-        log_buffer.add(message, stream="stderr")
+    def emit_error(message: str, log_type: str = "other") -> None:
+        log_buffer.add(message, stream="stderr", log_type=log_type)
         print(message, file=sys.stderr, flush=True)
 
     if args.interval is not None and args.interval <= 0:

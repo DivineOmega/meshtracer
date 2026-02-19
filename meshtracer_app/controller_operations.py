@@ -86,7 +86,10 @@ class ControllerOperationsMixin:
 
         if wake_event is not None:
             wake_event.set()
-        self._emit(f"[{utc_now()}] Manual traceroute queued for node #{node_num_int}.")
+        self._emit_typed(
+            f"[{utc_now()}] Manual traceroute queued for node #{node_num_int}.",
+            log_type="traceroute",
+        )
         return True, f"queued traceroute to node #{node_num_int} (position {queue_pos})"
 
 
@@ -147,8 +150,9 @@ class ControllerOperationsMixin:
         except Exception as exc:
             return False, f"telemetry request failed: {exc}"
         target_desc = self._node_log_descriptor(interface, node_num_int)
-        self._emit(
-            f"[{utc_now()}] Requested {telemetry_label} telemetry from {target_desc}."
+        self._emit_typed(
+            f"[{utc_now()}] Requested {telemetry_label} telemetry from {target_desc}.",
+            log_type="telemetry",
         )
         return True, f"requested {telemetry_label} telemetry from node #{node_num_int}"
 
@@ -191,7 +195,10 @@ class ControllerOperationsMixin:
             return False, f"node info request failed: {exc}"
 
         target_desc = self._node_log_descriptor(interface, node_num_int)
-        self._emit(f"[{utc_now()}] Requested node info from {target_desc}.")
+        self._emit_typed(
+            f"[{utc_now()}] Requested node info from {target_desc}.",
+            log_type="node_info",
+        )
         return True, f"requested node info from node #{node_num_int}"
 
     def request_node_position(self, node_num: Any) -> tuple[bool, str]:
@@ -233,7 +240,10 @@ class ControllerOperationsMixin:
             return False, f"position request failed: {exc}"
 
         target_desc = self._node_log_descriptor(interface, node_num_int)
-        self._emit(f"[{utc_now()}] Requested position from {target_desc}.")
+        self._emit_typed(
+            f"[{utc_now()}] Requested position from {target_desc}.",
+            log_type="position",
+        )
         return True, f"requested position from node #{node_num_int}"
 
     def get_chat_messages(
@@ -416,7 +426,10 @@ class ControllerOperationsMixin:
 
         self._bump_snapshot_revision()
         node_num = int(entry.get("node_num") or 0)
-        self._emit(f"[{utc_now()}] Removed queued traceroute #{queue_id_int} (node #{node_num}).")
+        self._emit_typed(
+            f"[{utc_now()}] Removed queued traceroute #{queue_id_int} (node #{node_num}).",
+            log_type="traceroute",
+        )
         return True, f"removed queued traceroute #{queue_id_int}"
 
     def reset_database(self) -> tuple[bool, str]:

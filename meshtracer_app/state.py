@@ -9,13 +9,30 @@ from .meshtastic_helpers import node_summary_from_node, node_summary_from_num
 from .storage import SQLiteStore
 
 
+RUNTIME_LOG_TYPES = {
+    "traceroute",
+    "telemetry",
+    "position",
+    "node_info",
+    "other",
+}
+
+
+def normalize_runtime_log_type(raw_type: Any) -> str:
+    text = str(raw_type or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if text in RUNTIME_LOG_TYPES:
+        return text
+    return "other"
+
+
 class RuntimeLogBuffer:
     def __init__(self, max_entries: int = 2000) -> None:
         self._lock = threading.Lock()
         self._entries: deque[dict[str, Any]] = deque(maxlen=max_entries)
         self._next_seq = 1
 
-    def add(self, message: str, stream: str) -> None:
+    def add(self, message: str, stream: str, *, log_type: str = "other") -> None:
+        normalized_type = normalize_runtime_log_type(log_type)
         lines = str(message).splitlines() or [str(message)]
         with self._lock:
             for line in lines:
@@ -26,6 +43,7 @@ class RuntimeLogBuffer:
                         "seq": self._next_seq,
                         "at_utc": utc_now(),
                         "stream": stream,
+                        "type": normalized_type,
                         "message": line,
                     }
                 )

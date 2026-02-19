@@ -107,23 +107,26 @@ class ControllerWorkerMixin:
                 )
 
             if target is None:
-                self._emit(
+                self._emit_typed(
                     f"[{utc_now()}] No eligible nodes heard in the last "
-                    f"{age_str(heard_window_seconds)}."
+                    f"{age_str(heard_window_seconds)}.",
+                    log_type="traceroute",
                 )
             else:
                 if manual_triggered:
-                    self._emit(
+                    self._emit_typed(
                         f"\n[{utc_now()}] Manually selected {node_display(target)} "
-                        f"(requested from UI)."
+                        f"(requested from UI).",
+                        log_type="traceroute",
                     )
                 else:
-                    self._emit(
+                    self._emit_typed(
                         f"\n[{utc_now()}] Selected {node_display(target)} "
                         f"(last heard {age_str(last_heard_age or 0)} ago, "
-                        f"{candidate_count} eligible nodes)."
+                        f"{candidate_count} eligible nodes).",
+                        log_type="traceroute",
                     )
-                self._emit(f"[{utc_now()}] Starting traceroute...")
+                self._emit_typed(f"[{utc_now()}] Starting traceroute...", log_type="traceroute")
 
                 target_num: int | None = None
                 try:
@@ -136,16 +139,18 @@ class ControllerWorkerMixin:
                         dest=target_num,
                         hopLimit=hop_limit,
                     )
-                    self._emit(
+                    self._emit_typed(
                         f"[{utc_now()}] Traceroute complete for "
-                        f"{self._node_log_descriptor(interface, target_num)}."
+                        f"{self._node_log_descriptor(interface, target_num)}.",
+                        log_type="traceroute",
                     )
 
                     if webhook_url:
                         if traceroute_capture["result"] is None:
-                            self._emit_error(
+                            self._emit_error_typed(
                                 f"[{utc_now()}] Webhook skipped: no parsed "
-                                "traceroute response payload available."
+                                "traceroute response payload available.",
+                                log_type="traceroute",
                             )
                         else:
                             webhook_payload = {
@@ -169,13 +174,22 @@ class ControllerWorkerMixin:
                                 payload=webhook_payload,
                             )
                             if delivered:
-                                self._emit(f"[{utc_now()}] Webhook delivered: {detail}")
+                                self._emit_typed(
+                                    f"[{utc_now()}] Webhook delivered: {detail}",
+                                    log_type="traceroute",
+                                )
                             else:
-                                self._emit_error(f"[{utc_now()}] Webhook delivery failed: {detail}")
+                                self._emit_error_typed(
+                                    f"[{utc_now()}] Webhook delivery failed: {detail}",
+                                    log_type="traceroute",
+                                )
                 except Exception as exc:  # keep loop alive for unexpected runtime errors
                     if stop_event.is_set():
                         break
-                    self._emit_error(f"[{utc_now()}] Traceroute failed: {exc}")
+                    self._emit_error_typed(
+                        f"[{utc_now()}] Traceroute failed: {exc}",
+                        log_type="traceroute",
+                    )
                 finally:
                     if manual_triggered and manual_queue_id is not None and queue_mesh_host:
                         self._store.remove_traceroute_queue_entry(queue_mesh_host, manual_queue_id)
@@ -191,7 +205,10 @@ class ControllerWorkerMixin:
 
             elapsed = time.time() - cycle_start
             sleep_seconds = max(0.0, interval_seconds - elapsed)
-            self._emit(f"[{utc_now()}] Waiting {sleep_seconds:.1f}s for next run...")
+            self._emit_typed(
+                f"[{utc_now()}] Waiting {sleep_seconds:.1f}s for next run...",
+                log_type="traceroute",
+            )
             if stop_event.is_set():
                 break
             if wake_event.wait(timeout=sleep_seconds):

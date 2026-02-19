@@ -116,9 +116,10 @@ class ControllerConnectionMixin:
                     self._bump_snapshot_revision()
             except Exception as exc:
                 traceroute_capture["result"] = None
-                self._emit_error(
+                self._emit_error_typed(
                     f"[{utc_now()}] Warning: failed to parse traceroute response "
-                    f"for webhook payload: {exc}"
+                    f"for webhook payload: {exc}",
+                    log_type="traceroute",
                 )
             if callable(original_traceroute_callback):
                 try:
@@ -344,14 +345,16 @@ class ControllerConnectionMixin:
                 )
                 if telemetry_types:
                     suffix = "" if telemetry_updated else " (no data changes)"
-                    self._emit(
+                    self._emit_typed(
                         f"[{utc_now()}] Received {', '.join(telemetry_types)} telemetry "
-                        f"from {node_desc}{suffix}."
+                        f"from {node_desc}{suffix}.",
+                        log_type="telemetry",
                     )
                 if node_info_packet:
                     suffix = "" if node_info_updated else " (no data changes)"
-                    self._emit(
-                        f"[{utc_now()}] Received node info from {node_desc}{suffix}."
+                    self._emit_typed(
+                        f"[{utc_now()}] Received node info from {node_desc}{suffix}.",
+                        log_type="node_info",
                     )
                 if position_packet:
                     lat, lon = self._packet_position(packet)
@@ -359,9 +362,10 @@ class ControllerConnectionMixin:
                     if lat is not None and lon is not None:
                         position_text = f" ({lat:.5f}, {lon:.5f})"
                     suffix = "" if position_updated else " (no data changes)"
-                    self._emit(
+                    self._emit_typed(
                         f"[{utc_now()}] Received position from {node_desc}"
-                        f"{position_text}{suffix}."
+                        f"{position_text}{suffix}.",
+                        log_type="position",
                     )
                 if isinstance(chat_message, dict):
                     text = str(chat_message.get("text") or "")

@@ -19,6 +19,31 @@ from controller_test_utils import (
 
 
 class ControllerLifecycleTests(unittest.TestCase):
+    def test_snapshot_logs_include_backend_type_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                log_buffer = RuntimeLogBuffer()
+                log_buffer.add("telemetry line", stream="stdout", log_type="telemetry")
+                log_buffer.add("fallback line", stream="stdout", log_type="unexpected")
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=log_buffer,
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                logs = list(controller.snapshot().get("logs") or [])
+                self.assertEqual(len(logs), 2)
+                self.assertEqual(logs[0].get("message"), "telemetry line")
+                self.assertEqual(logs[0].get("type"), "telemetry")
+                self.assertEqual(logs[1].get("message"), "fallback line")
+                self.assertEqual(logs[1].get("type"), "other")
+            finally:
+                store.close()
+
     def test_snapshot_includes_traceroute_control_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"
@@ -213,4 +238,3 @@ class ControllerLifecycleTests(unittest.TestCase):
                 self.assertGreater(next_revision, since)
             finally:
                 store.close()
-

@@ -5,6 +5,7 @@ import ipaddress
 import socket
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from .common import utc_now
@@ -107,11 +108,20 @@ class LanDiscoverer:
         scan_interval_seconds: float = 45.0,
         connect_timeout_seconds: float = 0.22,
         max_results: int = 30,
+        on_change: Callable[[], None] | None = None,
+        progress_notify_every: int = 8,
+        progress_notify_min_interval_seconds: float = 0.2,
     ) -> None:
         self._port = int(port)
         self._scan_interval_seconds = float(scan_interval_seconds)
         self._connect_timeout_seconds = float(connect_timeout_seconds)
         self._max_results = int(max_results)
+        self._on_change = on_change if callable(on_change) else None
+        self._progress_notify_every = max(1, int(progress_notify_every))
+        self._progress_notify_min_interval_seconds = max(
+            0.01,
+            float(progress_notify_min_interval_seconds),
+        )
 
         self._lock = threading.Lock()
         self._enabled = True
@@ -126,6 +136,15 @@ class LanDiscoverer:
         self._wake_event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True, name="meshtracer-discovery")
         self._thread.start()
+
+    def _notify_change(self) -> None:
+        callback = self._on_change
+        if not callable(callback):
+            return
+        try:
+            callback()
+        except Exception:
+            pass
 
     def set_enabled(self, enabled: bool) -> None:
         with self._lock:
@@ -218,14 +237,17 @@ class LanDiscoverer:
             self._progress_done = 0
             self._networks = network_strs
             self._last_scan_utc = utc_now()
+        self._notify_change()
 
         if not hosts:
             with self._lock:
                 self._scanning = False
+            self._notify_change()
             return
 
         max_workers = min(96, max(24, len(hosts) // 4))
         found: dict[str, dict[str, Any]] = {}
+        last_progress_notify = time.monotonic()
 
         def task(ip: str) -> tuple[str, bool, float]:
             ok, elapsed = _check_tcp(ip, self._port, self._connect_timeout_seconds)
@@ -240,6 +262,17 @@ class LanDiscoverer:
                     ip, ok, elapsed = fut.result()
                     with self._lock:
                         self._progress_done += 1
+                        progress_done = self._progress_done
+                        progress_total = self._progress_total
+                    now_monotonic = time.monotonic()
+                    if (
+                        progress_done >= progress_total
+                        or (progress_done % self._progress_notify_every) == 0
+                        or (now_monotonic - last_progress_notify)
+                        >= self._progress_notify_min_interval_seconds
+                    ):
+                        last_progress_notify = now_monotonic
+                        self._notify_change()
                     if not ok:
                         continue
                     found[ip] = {
@@ -266,3 +299,4 @@ class LanDiscoverer:
                 if float(item.get("last_seen_epoch") or 0) >= cutoff
             }
             self._scanning = False
+        self._notify_change()

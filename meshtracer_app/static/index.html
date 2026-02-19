@@ -120,7 +120,30 @@
       </div>
 
       <div id="panels">
-        <section class="panel active" data-panel="log">
+        <section class="panel log-panel active" data-panel="log">
+          <div class="log-toolbar">
+            <span class="log-toolbar-label">Show</span>
+            <label class="log-filter">
+              <input id="logFilterTraceroute" type="checkbox" checked>
+              <span>Traceroute</span>
+            </label>
+            <label class="log-filter">
+              <input id="logFilterTelemetry" type="checkbox" checked>
+              <span>Telemetry</span>
+            </label>
+            <label class="log-filter">
+              <input id="logFilterPosition" type="checkbox" checked>
+              <span>Position</span>
+            </label>
+            <label class="log-filter">
+              <input id="logFilterNodeInfo" type="checkbox" checked>
+              <span>Node Info</span>
+            </label>
+            <label class="log-filter">
+              <input id="logFilterOther" type="checkbox" checked>
+              <span>Other</span>
+            </label>
+          </div>
           <div id="logList" class="scroll-list"></div>
         </section>
         <section class="panel nodes-panel" data-panel="nodes">
