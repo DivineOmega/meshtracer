@@ -23,6 +23,7 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
 }
 body.sidebar-resizing {
   cursor: ew-resize;
@@ -94,6 +95,12 @@ body.sidebar-resizing {
 }
 #sidebarToggle:hover {
   background: #19305f;
+}
+#sidebar.collapsed #sidebarToggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1300;
 }
 #sidebarShell {
   display: flex;
