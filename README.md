@@ -273,8 +273,12 @@ Top-level keys include:
 - map data: `nodes`, `traces`, `edges`
 - revisions: `map_revision`, `log_revision`, `snapshot_revision`
 - logs: `logs`
+  - Each log entry includes: `seq`, `at_utc`, `stream`, `type`, `message`
+  - `type` is one of: `traceroute`, `telemetry`, `position`, `node_info`, `other`
 - connection: `connected`, `connection_state`, `connected_host`, `connection_error`
 - discovery: `discovery`
+  - Includes: `enabled`, `scanning`, `progress_done`, `progress_total`, `port`, `networks`, `last_scan_utc`, `candidates`
+  - Candidate entry fields: `host`, `port`, `latency_ms`, `last_seen_utc`
 - runtime config: `config`, `config_defaults`
 - server info: `server` (`db_path`, `map_host`, `map_port`)
 - traceroute control: `traceroute_control` (`running_node_num`, `queued_node_nums`, `queue_entries`)
@@ -330,16 +334,41 @@ Payload fields include:
 ## Project Layout
 
 - `meshtracer.py`: launcher entrypoint
-- `meshtracer_app/app.py`: controller, worker loop, connection and command handling
+- `requirements.txt`: Python dependency pins
+- `LICENSE`: license text
+- `meshtracer_app/__init__.py`: package marker
+- `meshtracer_app/app.py`: controller composition, startup/shutdown, snapshot wiring
 - `meshtracer_app/cli.py`: CLI parsing
+- `meshtracer_app/common.py`: shared helpers (timestamps, formatting)
+- `meshtracer_app/controller_defaults.py`: runtime config defaults
+- `meshtracer_app/controller_config.py`: runtime config + discovery control handlers
+- `meshtracer_app/controller_connection.py`: connect/disconnect and inbound packet plumbing
+- `meshtracer_app/controller_operations.py`: API-exposed operations and snapshot assembly
+- `meshtracer_app/controller_packets.py`: packet decode/update handling
+- `meshtracer_app/controller_worker.py`: traceroute worker loop and queue execution
 - `meshtracer_app/map_server.py`: HTTP API + static asset serving
-- `meshtracer_app/static/`: frontend `index.html`, `app.css`, `app.js`
-- `meshtracer_app/state.py`: map state/revisioning/log buffer
-- `meshtracer_app/storage.py`: SQLite schema + persistence
 - `meshtracer_app/discovery.py`: LAN discovery scanner
+- `meshtracer_app/state.py`: map state/revisioning/log buffer
 - `meshtracer_app/meshtastic_helpers.py`: Meshtastic parsing/utility helpers
 - `meshtracer_app/webhook.py`: webhook delivery helper
-- `tests/`: unit tests
+- `meshtracer_app/storage.py`: SQLite store facade
+- `meshtracer_app/storage_repo_base.py`: shared SQLite repository helpers
+- `meshtracer_app/storage_runtime.py`: runtime config persistence
+- `meshtracer_app/storage_snapshot.py`: snapshot reads for nodes/traces
+- `meshtracer_app/storage_nodes.py`: node + telemetry + position persistence
+- `meshtracer_app/storage_traceroutes.py`: traceroute + traceroute queue persistence
+- `meshtracer_app/storage_chat.py`: chat persistence + chat history queries
+- `meshtracer_app/static/index.html`: frontend shell and markup
+- `meshtracer_app/static/app.css`: frontend styling
+- `meshtracer_app/static/app.js`: frontend map/UI logic
+- `tests/controller_test_utils.py`: shared controller test fixtures/helpers
+- `tests/test_controller_chat.py`: controller chat tests
+- `tests/test_controller_config.py`: runtime config and validation tests
+- `tests/test_controller_lifecycle.py`: startup/shutdown and lifecycle tests
+- `tests/test_controller_state_worker.py`: state and worker behavior tests
+- `tests/test_discovery.py`: discovery scanner tests
+- `tests/test_meshtastic_helpers.py`: Meshtastic helper/unit parser tests
+- `tests/test_storage.py`: storage/repository persistence tests
 
 ## Development Checks
 
