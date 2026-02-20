@@ -204,6 +204,23 @@ class ControllerConfigMixin:
                 raise ValueError("traceroute_behavior must be 'automatic' or 'manual'")
             return text
 
+        def pick_bool(name: str) -> bool | None:
+            if name not in update:
+                return None
+            value = update.get(name)
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(int(value))
+            text = str(value).strip().lower()
+            if text in ("1", "true", "yes", "y", "on"):
+                return True
+            if text in ("0", "false", "no", "n", "off"):
+                return False
+            raise ValueError(f"invalid {name}")
+
         try:
             traceroute_behavior = pick_behavior("traceroute_behavior")
             interval = pick_float("interval")
@@ -212,6 +229,9 @@ class ControllerConfigMixin:
             mid_window = pick_int("mid_window")
             hop_limit = pick_int("hop_limit")
             traceroute_retention_hours = pick_int("traceroute_retention_hours")
+            chat_notification_desktop = pick_bool("chat_notification_desktop")
+            chat_notification_sound = pick_bool("chat_notification_sound")
+            chat_notification_notify_focused = pick_bool("chat_notification_notify_focused")
         except ValueError as exc:
             return False, str(exc), None
 
@@ -259,6 +279,12 @@ class ControllerConfigMixin:
             new_config["hop_limit"] = hop_limit
         if traceroute_retention_hours is not None:
             new_config["traceroute_retention_hours"] = traceroute_retention_hours
+        if chat_notification_desktop is not None:
+            new_config["chat_notification_desktop"] = chat_notification_desktop
+        if chat_notification_sound is not None:
+            new_config["chat_notification_sound"] = chat_notification_sound
+        if chat_notification_notify_focused is not None:
+            new_config["chat_notification_notify_focused"] = chat_notification_notify_focused
         if webhook_url is not None or "webhook_url" in update:
             new_config["webhook_url"] = webhook_url
         if webhook_api_token is not None or "webhook_api_token" in update:

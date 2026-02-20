@@ -136,6 +136,65 @@ class ControllerConfigAndRequestTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_chat_notification_settings_are_config_backed_and_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                cfg = controller.get_config()
+                self.assertFalse(bool(cfg.get("chat_notification_desktop")))
+                self.assertFalse(bool(cfg.get("chat_notification_sound")))
+                self.assertFalse(bool(cfg.get("chat_notification_notify_focused")))
+
+                ok, detail = controller.set_config(
+                    {
+                        "chat_notification_desktop": True,
+                        "chat_notification_sound": True,
+                        "chat_notification_notify_focused": True,
+                    }
+                )
+                self.assertTrue(ok, detail)
+
+                updated = controller.get_config()
+                self.assertTrue(bool(updated.get("chat_notification_desktop")))
+                self.assertTrue(bool(updated.get("chat_notification_sound")))
+                self.assertTrue(bool(updated.get("chat_notification_notify_focused")))
+
+                persisted = store.get_runtime_config("global") or {}
+                self.assertTrue(bool(persisted.get("chat_notification_desktop")))
+                self.assertTrue(bool(persisted.get("chat_notification_sound")))
+                self.assertTrue(bool(persisted.get("chat_notification_notify_focused")))
+            finally:
+                store.close()
+
+    def test_set_config_rejects_invalid_chat_notification_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                ok, detail = controller.set_config({"chat_notification_sound": "definitely"})
+                self.assertFalse(ok)
+                self.assertIn("chat_notification_sound", detail)
+                self.assertFalse(bool(controller.get_config().get("chat_notification_sound")))
+            finally:
+                store.close()
+
     def test_interval_supports_30_seconds_and_defaults_to_5_minutes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"

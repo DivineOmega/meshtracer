@@ -154,7 +154,6 @@
     const FALLBACK_POLL_MS_CONNECTED = 30000;
     const FALLBACK_POLL_MS_DISCONNECTED = 3000;
     const LOG_FILTER_STORAGE_KEY = "meshtracer.logTypeFilters";
-    const CHAT_NOTIFICATION_SETTINGS_STORAGE_KEY = "meshtracer.chatNotificationSettings";
     const CHAT_NOTIFICATION_CURSOR_STORAGE_PREFIX = "meshtracer.chatNotificationCursor:";
 
     function reportClientError(message, options = {}) {
@@ -297,26 +296,13 @@
       };
     }
 
-    function loadChatNotificationSettingsFromStorage() {
-      try {
-        const raw = localStorage.getItem(CHAT_NOTIFICATION_SETTINGS_STORAGE_KEY);
-        if (!raw) {
-          return normalizeChatNotificationSettings({});
-        }
-        return normalizeChatNotificationSettings(JSON.parse(String(raw)));
-      } catch (_e) {
-        return normalizeChatNotificationSettings({});
-      }
-    }
-
-    function saveChatNotificationSettingsToStorage() {
-      try {
-        localStorage.setItem(
-          CHAT_NOTIFICATION_SETTINGS_STORAGE_KEY,
-          JSON.stringify(normalizeChatNotificationSettings(state.chatNotificationSettings))
-        );
-      } catch (_e) {
-      }
+    function chatNotificationSettingsFromConfig(config) {
+      const source = config && typeof config === "object" ? config : {};
+      return normalizeChatNotificationSettings({
+        desktop: source.chat_notification_desktop,
+        sound: source.chat_notification_sound,
+        notifyFocused: source.chat_notification_notify_focused,
+      });
     }
 
     function loadChatNotificationCursor(meshHost) {
@@ -702,22 +688,21 @@
     }
 
     async function enableDesktopNotifications(enabled) {
+      const previousEnabled = Boolean(state.chatNotificationSettings.desktop);
       const nextEnabled = Boolean(enabled);
       if (!nextEnabled) {
         state.chatNotificationSettings.desktop = false;
-        saveChatNotificationSettingsToStorage();
         applyChatNotificationSettingsToForm();
+        if (previousEnabled) markConfigDirty();
         return;
       }
       if (!chatNotificationApiSupported()) {
         state.chatNotificationSettings.desktop = false;
-        saveChatNotificationSettingsToStorage();
         applyChatNotificationSettingsToForm();
         return;
       }
       if (chatNotificationPermission() === "denied") {
         state.chatNotificationSettings.desktop = false;
-        saveChatNotificationSettingsToStorage();
         applyChatNotificationSettingsToForm();
         return;
       }
@@ -726,20 +711,18 @@
           const permission = await Notification.requestPermission();
           if (String(permission || "").toLowerCase() !== "granted") {
             state.chatNotificationSettings.desktop = false;
-            saveChatNotificationSettingsToStorage();
             applyChatNotificationSettingsToForm();
             return;
           }
         } catch (_e) {
           state.chatNotificationSettings.desktop = false;
-          saveChatNotificationSettingsToStorage();
           applyChatNotificationSettingsToForm();
           return;
         }
       }
       state.chatNotificationSettings.desktop = true;
-      saveChatNotificationSettingsToStorage();
       applyChatNotificationSettingsToForm();
+      if (!previousEnabled) markConfigDirty();
     }
 
     async function fetchIncomingChatDeltas(data, options = {}) {
@@ -4022,6 +4005,8 @@
           ? "Saved token is hidden. Type a new value to replace; leave blank to keep."
           : "Optional token";
       }
+      state.chatNotificationSettings = chatNotificationSettingsFromConfig(config);
+      applyChatNotificationSettingsToForm();
     }
 
     function updateConfigUi(data) {
@@ -4083,6 +4068,9 @@
         hop_limit: asInt(cfgHopLimit?.value, 7),
         traceroute_retention_hours: asInt(cfgTracerouteRetentionHours?.value, 720),
         webhook_url: String(cfgWebhookUrl?.value || "").trim() || null,
+        chat_notification_desktop: Boolean(state.chatNotificationSettings.desktop),
+        chat_notification_sound: Boolean(state.chatNotificationSettings.sound),
+        chat_notification_notify_focused: Boolean(state.chatNotificationSettings.notifyFocused),
       };
       if (state.configTokenTouched) {
         payload.webhook_api_token = String(cfgWebhookToken?.value || "").trim() || null;
@@ -4121,6 +4109,9 @@
         traceroute_retention_hours: 720,
         webhook_url: null,
         webhook_api_token: null,
+        chat_notification_desktop: false,
+        chat_notification_sound: false,
+        chat_notification_notify_focused: false,
       };
       applyConfigToForm(defaults);
       state.configTokenTouched = true;
@@ -4331,7 +4322,6 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
       state.logTypeFilters = normalizedLogTypeFilters(state.logTypeFilters);
     }
     syncLogFilterControls();
-    state.chatNotificationSettings = loadChatNotificationSettingsFromStorage();
     applyChatNotificationSettingsToForm();
     updateChatOpenButton();
 
@@ -4408,15 +4398,13 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     if (cfgChatNotifSound) {
       cfgChatNotifSound.addEventListener("change", () => {
         state.chatNotificationSettings.sound = Boolean(cfgChatNotifSound.checked);
-        saveChatNotificationSettingsToStorage();
-        applyChatNotificationSettingsToForm();
+        markConfigDirty();
       });
     }
     if (cfgChatNotifFocused) {
       cfgChatNotifFocused.addEventListener("change", () => {
         state.chatNotificationSettings.notifyFocused = Boolean(cfgChatNotifFocused.checked);
-        saveChatNotificationSettingsToStorage();
-        applyChatNotificationSettingsToForm();
+        markConfigDirty();
       });
     }
     connectHostInput.addEventListener("keydown", (event) => {

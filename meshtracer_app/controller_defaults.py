@@ -13,4 +13,7 @@ DEFAULT_RUNTIME_CONFIG: dict[str, Any] = {
     "webhook_url": None,
     "webhook_api_token": None,
     "traceroute_retention_hours": 720,
+    "chat_notification_desktop": False,
+    "chat_notification_sound": False,
+    "chat_notification_notify_focused": False,
 }
