@@ -1285,6 +1285,9 @@ body.sidebar-resizing {
 .log-entry.log-telemetry {
   border-left: 3px solid #64d2ff;
 }
+.log-entry.log-messaging {
+  border-left: 3px solid #22c55e;
+}
 .log-entry.log-position {
   border-left: 3px solid #34d399;
 }

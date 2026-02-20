@@ -12,6 +12,7 @@ from .storage import SQLiteStore
 RUNTIME_LOG_TYPES = {
     "traceroute",
     "telemetry",
+    "messaging",
     "position",
     "node_info",
     "other",

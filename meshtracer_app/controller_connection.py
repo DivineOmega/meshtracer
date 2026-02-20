@@ -407,14 +407,16 @@ class ControllerConnectionMixin:
                     text_preview = text if len(text) <= 90 else f"{text[:87]}..."
                     if str(chat_message.get("message_type") or "") == "channel":
                         channel_index = int(chat_message.get("channel_index") or 0)
-                        self._emit(
+                        self._emit_typed(
                             f"[{utc_now()}] Received channel message on channel #{channel_index} "
-                            f"from {node_desc}: \"{text_preview}\""
+                            f"from {node_desc}: \"{text_preview}\"",
+                            log_type="messaging",
                         )
                     else:
-                        self._emit(
+                        self._emit_typed(
                             f"[{utc_now()}] Received direct message from {node_desc}: "
-                            f"\"{text_preview}\""
+                            f"\"{text_preview}\"",
+                            log_type="messaging",
                         )
             else:
                 map_state.update_nodes_from_interface(connected_interface)

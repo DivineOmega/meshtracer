@@ -26,6 +26,7 @@ class ControllerLifecycleTests(unittest.TestCase):
             try:
                 log_buffer = RuntimeLogBuffer()
                 log_buffer.add("telemetry line", stream="stdout", log_type="telemetry")
+                log_buffer.add("message line", stream="stdout", log_type="messaging")
                 log_buffer.add("fallback line", stream="stdout", log_type="unexpected")
                 controller = MeshTracerController(
                     args=_args(db_path=str(db_path)),
@@ -36,11 +37,13 @@ class ControllerLifecycleTests(unittest.TestCase):
                 )
 
                 logs = list(controller.snapshot().get("logs") or [])
-                self.assertEqual(len(logs), 2)
+                self.assertEqual(len(logs), 3)
                 self.assertEqual(logs[0].get("message"), "telemetry line")
                 self.assertEqual(logs[0].get("type"), "telemetry")
-                self.assertEqual(logs[1].get("message"), "fallback line")
-                self.assertEqual(logs[1].get("type"), "other")
+                self.assertEqual(logs[1].get("message"), "message line")
+                self.assertEqual(logs[1].get("type"), "messaging")
+                self.assertEqual(logs[2].get("message"), "fallback line")
+                self.assertEqual(logs[2].get("type"), "other")
             finally:
                 store.close()
 

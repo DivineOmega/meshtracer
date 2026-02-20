@@ -37,6 +37,7 @@
     const logList = document.getElementById("logList");
     const logFilterTraceroute = document.getElementById("logFilterTraceroute");
     const logFilterTelemetry = document.getElementById("logFilterTelemetry");
+    const logFilterMessaging = document.getElementById("logFilterMessaging");
     const logFilterPosition = document.getElementById("logFilterPosition");
     const logFilterNodeInfo = document.getElementById("logFilterNodeInfo");
     const logFilterOther = document.getElementById("logFilterOther");
@@ -113,6 +114,7 @@
       logTypeFilters: {
         traceroute: true,
         telemetry: true,
+        messaging: true,
         position: true,
         node_info: true,
         other: true,
@@ -1162,6 +1164,7 @@
     for (const [key, input] of [
       ["traceroute", logFilterTraceroute],
       ["telemetry", logFilterTelemetry],
+      ["messaging", logFilterMessaging],
       ["position", logFilterPosition],
       ["node_info", logFilterNodeInfo],
       ["other", logFilterOther],
@@ -2573,6 +2576,7 @@
       return {
         traceroute: source.traceroute !== false,
         telemetry: source.telemetry !== false,
+        messaging: source.messaging !== false,
         position: source.position !== false,
         node_info: source.node_info !== false,
         other: source.other !== false,
@@ -2590,6 +2594,7 @@
         .replace(/[-\s]+/g, "_");
       if (rawType === "traceroute") return "traceroute";
       if (rawType === "telemetry") return "telemetry";
+      if (rawType === "messaging") return "messaging";
       if (rawType === "position") return "position";
       if (rawType === "node_info") return "node_info";
       return "other";
@@ -2598,6 +2603,7 @@
     function syncLogFilterControls() {
       if (logFilterTraceroute) logFilterTraceroute.checked = Boolean(state.logTypeFilters.traceroute);
       if (logFilterTelemetry) logFilterTelemetry.checked = Boolean(state.logTypeFilters.telemetry);
+      if (logFilterMessaging) logFilterMessaging.checked = Boolean(state.logTypeFilters.messaging);
       if (logFilterPosition) logFilterPosition.checked = Boolean(state.logTypeFilters.position);
       if (logFilterNodeInfo) logFilterNodeInfo.checked = Boolean(state.logTypeFilters.node_info);
       if (logFilterOther) logFilterOther.checked = Boolean(state.logTypeFilters.other);

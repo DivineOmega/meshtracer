@@ -419,14 +419,16 @@ class ControllerOperationsMixin:
         self._bump_snapshot_revision()
 
         if kind == "channel":
-            self._emit(
-                f"[{utc_now()}] Sent channel message on channel #{int(channel_index or 0)}."
+            self._emit_typed(
+                f"[{utc_now()}] Sent channel message on channel #{int(channel_index or 0)}.",
+                log_type="messaging",
             )
             return True, f"sent message to channel #{int(channel_index or 0)}"
 
         target_desc = self._node_log_descriptor(interface, peer_node_num)
-        self._emit(
-            f"[{utc_now()}] Sent direct message to {target_desc}."
+        self._emit_typed(
+            f"[{utc_now()}] Sent direct message to {target_desc}.",
+            log_type="messaging",
         )
         return True, f"sent direct message to node #{peer_node_num}"
 

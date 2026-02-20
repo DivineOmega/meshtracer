@@ -17,11 +17,16 @@ class ControllerChatTests(unittest.TestCase):
             db_path = Path(tmp_dir) / "test.db"
             store = SQLiteStore(str(db_path))
             try:
+                emitted: list[tuple[str, str]] = []
+
+                def emit(message: str, log_type: str = "other") -> None:
+                    emitted.append((str(message), str(log_type)))
+
                 controller = MeshTracerController(
                     args=_args(db_path=str(db_path)),
                     store=store,
                     log_buffer=RuntimeLogBuffer(),
-                    emit=lambda _message: None,
+                    emit=emit,
                     emit_error=lambda _message: None,
                 )
                 map_state = MapState(store=store, mesh_host="test:chat")
@@ -54,6 +59,8 @@ class ControllerChatTests(unittest.TestCase):
                 self.assertEqual(len(direct_messages), 1)
                 self.assertEqual(direct_messages[0].get("text"), "hello direct")
                 self.assertEqual(direct_messages[0].get("peer_node_num"), 42)
+                message_log_types = [log_type for _message, log_type in emitted if "message" in _message.lower()]
+                self.assertIn("messaging", message_log_types)
 
                 incoming_chat_id = store.add_chat_message(
                     "test:chat",
