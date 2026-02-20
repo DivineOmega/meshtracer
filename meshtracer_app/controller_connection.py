@@ -12,10 +12,40 @@ from .state import MapState
 
 
 class ControllerConnectionMixin:
+    @staticmethod
+    def _parse_connection_target(raw_target: str) -> tuple[str, str | None, str]:
+        target = str(raw_target or "").strip()
+        if not target:
+            raise ValueError("missing host")
+
+        if "://" not in target:
+            return "tcp", target, target
+
+        scheme_raw, _sep, endpoint_raw = target.partition("://")
+        scheme = str(scheme_raw or "").strip().lower()
+        endpoint = str(endpoint_raw or "").strip()
+
+        if scheme == "tcp":
+            if not endpoint:
+                raise ValueError("missing TCP host")
+            # Keep TCP target normalized to plain host text for compatibility.
+            return "tcp", endpoint, endpoint
+
+        if scheme == "ble":
+            # Empty BLE endpoint means "connect to the only/first discoverable node".
+            normalized = "ble://" if not endpoint else f"ble://{endpoint}"
+            return "ble", (endpoint or None), normalized
+
+        raise ValueError(f"unsupported connection scheme '{scheme}' (supported: tcp://, ble://)")
+
     def connect(self, host: str) -> tuple[bool, str]:
-        host = str(host or "").strip()
-        if not host:
+        target_raw = str(host or "").strip()
+        if not target_raw:
             return False, "missing host"
+        try:
+            transport, endpoint, target = self._parse_connection_target(target_raw)
+        except ValueError as exc:
+            return False, str(exc)
 
         # Always tear down any current connection so connect() is idempotent.
         self.disconnect()
@@ -24,15 +54,17 @@ class ControllerConnectionMixin:
 
         with self._lock:
             self._connection_state = "connecting"
-            self._connected_host = host
+            self._connected_host = target
             self._connection_error = None
             self._bump_snapshot_revision_locked()
 
-        self._emit(f"[{utc_now()}] Connecting to Meshtastic node at {host}...")
+        self._emit(f"[{utc_now()}] Connecting to Meshtastic node at {target}...")
 
         try:
-            tcp_interface_mod = importlib.import_module("meshtastic.tcp_interface")
             mesh_pb2_mod = importlib.import_module("meshtastic.protobuf.mesh_pb2")
+            interface_mod = importlib.import_module(
+                "meshtastic.tcp_interface" if transport == "tcp" else "meshtastic.ble_interface"
+            )
         except ModuleNotFoundError:
             detail = (
                 "Missing dependency: meshtastic. Install in this repo venv with:\n"
@@ -60,7 +92,10 @@ class ControllerConnectionMixin:
             return False, str(exc)
 
         try:
-            interface = tcp_interface_mod.TCPInterface(hostname=host)
+            if transport == "tcp":
+                interface = interface_mod.TCPInterface(hostname=str(endpoint))
+            else:
+                interface = interface_mod.BLEInterface(address=endpoint)
         except Exception as exc:
             self._emit_error(f"[{utc_now()}] Connection failed: {exc}")
             with self._lock:
@@ -72,7 +107,7 @@ class ControllerConnectionMixin:
             return False, str(exc)
 
         self._emit(f"[{utc_now()}] Connected.")
-        partition_key = resolve_mesh_partition_key(interface=interface, fallback_host=host)
+        partition_key = resolve_mesh_partition_key(interface=interface, fallback_host=target)
         config = self.get_config()
         map_state = MapState(
             store=self._store,
@@ -139,7 +174,7 @@ class ControllerConnectionMixin:
         wake_event = threading.Event()
         worker = threading.Thread(
             target=self._traceroute_worker,
-            args=(interface, map_state, traceroute_capture, stop_event, wake_event, host),
+            args=(interface, map_state, traceroute_capture, stop_event, wake_event, target),
             daemon=True,
             name="meshtracer-worker",
         )

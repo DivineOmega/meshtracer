@@ -1,6 +1,6 @@
 # meshtracer
 
-Meshtracer connects to a Meshtastic node over TCP (WiFi/Ethernet), stores mesh history in SQLite, and serves a live web UI for map/traceroute/telemetry/chat workflows.
+Meshtracer connects to a Meshtastic node over TCP (WiFi/Ethernet) or BLE (Bluetooth LE), stores mesh history in SQLite, and serves a live web UI for map/traceroute/telemetry/chat workflows.
 
 Default web UI address: `http://127.0.0.1:8090/`
 
@@ -8,7 +8,7 @@ Default web UI address: `http://127.0.0.1:8090/`
 
 - Python `3.10+`
 - `git`
-- Meshtastic node reachable by IP/hostname over TCP.
+- Meshtastic node reachable by IP/hostname over TCP, or reachable over BLE.
 - Python dependencies from `requirements.txt` (currently pins `meshtastic==2.7.7`).
 
 ## Quick Start
@@ -35,6 +35,12 @@ Start locally with startup auto-connect to a Meshtastic node:
 source .venv/bin/activate && python meshtracer.py <NODE_IP_OR_HOST>
 ```
 
+Start locally and connect over BLE:
+
+```bash
+source .venv/bin/activate && python meshtracer.py ble://<BLE_IDENTIFIER_OR_ADDRESS>
+```
+
 Host UI for access from other devices on your LAN:
 
 ```bash
@@ -53,8 +59,8 @@ Stop with `Ctrl+C`.
 
 ## Capabilities
 
-- Connect/disconnect to a Meshtastic TCP node from UI or CLI startup host.
-- Best-effort LAN discovery for Meshtastic TCP targets (default port `4403`).
+- Connect/disconnect to a Meshtastic node over TCP or BLE from UI or CLI startup target.
+- Best-effort discovery for Meshtastic TCP LAN targets (port `4403`) and BLE targets.
 - Continuous traceroute worker with configurable behavior:
   - `automatic`: periodic random eligible-node traceroutes.
   - `manual`: runs only queued traceroutes.
@@ -92,6 +98,9 @@ python meshtracer.py [host] [options]
 
 - Optional when web UI is enabled.
 - Required when using `--no-web`.
+- Formats:
+  - TCP (default): `<NODE_IP_OR_HOST>` or `tcp://<NODE_IP_OR_HOST>`
+  - BLE: `ble://<BLE_IDENTIFIER_OR_ADDRESS>` (or `ble://` to connect to the first/only discoverable Meshtastic BLE device)
 
 Options:
 
@@ -122,6 +131,7 @@ Options:
 ### Discovery behavior
 
 - Discovery scans likely private `/24` networks for open Meshtastic TCP port `4403`.
+- Discovery also attempts a BLE scan for nearby Meshtastic peripherals.
 - Discovery is enabled while disconnected in web UI mode.
 - Discovery is disabled after successful connect and re-enabled on disconnect.
 
@@ -237,6 +247,7 @@ All endpoints are served by embedded web server.
 
 - `/api/connect`
   - Body: `{ "host": "..." }`
+  - Host formats: plain TCP host/IP, `tcp://...`, or `ble://...`
 - `/api/disconnect`
   - Body: `{}`
 - `/api/config`
@@ -347,7 +358,7 @@ Payload fields include:
 - `meshtracer_app/controller_packets.py`: packet decode/update handling
 - `meshtracer_app/controller_worker.py`: traceroute worker loop and queue execution
 - `meshtracer_app/map_server.py`: HTTP API + static asset serving
-- `meshtracer_app/discovery.py`: LAN discovery scanner
+- `meshtracer_app/discovery.py`: LAN TCP + BLE discovery scanner
 - `meshtracer_app/state.py`: map state/revisioning/log buffer
 - `meshtracer_app/meshtastic_helpers.py`: Meshtastic parsing/utility helpers
 - `meshtracer_app/webhook.py`: webhook delivery helper
@@ -387,7 +398,8 @@ python -m py_compile meshtracer.py meshtracer_app/*.py tests/*.py
 ## Troubleshooting
 
 - Connect fails:
-  - Confirm target host is reachable and Meshtastic TCP is enabled.
+  - For TCP targets, confirm the host is reachable and Meshtastic TCP is enabled.
+  - For BLE targets, confirm Bluetooth is enabled and the node is advertising over BLE.
 - `--no-web` mode exits with host error:
   - Provide positional `host` argument.
 - Discovery list is empty:

@@ -3309,7 +3309,7 @@
       if (isConnecting) {
         connectStatus.textContent = host ? `Connecting to ${host}...` : "Connecting...";
       } else {
-        connectStatus.textContent = "Meshtracer runs locally and connects to your node over TCP on your LAN.";
+        connectStatus.textContent = "Meshtracer runs locally and connects to your node over TCP (LAN) or BLE (Bluetooth).";
       }
 
       if (!connected && !state.promptedConnect) {
@@ -3327,64 +3327,121 @@
 
       const enabled = Boolean(discovery && discovery.enabled);
       const scanning = Boolean(discovery && discovery.scanning);
+      const scanPhase = String((discovery && discovery.scan_phase) || "").trim().toLowerCase();
       const networks = Array.isArray(discovery && discovery.networks) ? discovery.networks : [];
       const port = Number((discovery && discovery.port) || 4403);
       const candidates = Array.isArray(discovery && discovery.candidates) ? discovery.candidates : [];
+      const bleCandidates = Array.isArray(discovery && discovery.ble_candidates)
+        ? discovery.ble_candidates
+        : [];
       const done = Number((discovery && discovery.progress_done) || 0);
       const total = Number((discovery && discovery.progress_total) || 0);
       const lastScanUtc = String((discovery && discovery.last_scan_utc) || "");
+      const bleLastScanUtc = String((discovery && discovery.ble_last_scan_utc) || "");
 
       discoveryRescan.disabled = !enabled || scanning;
 
       if (!enabled) {
         discoveryMeta.textContent = "Auto-discovery is disabled.";
-        discoveryList.innerHTML = '<div class="discovery-empty">Enter a node IP/hostname above, or start Meshtracer with discovery enabled.</div>';
+        discoveryList.innerHTML = '<div class="discovery-empty">Enter a node target above (TCP host or ble://...), or start Meshtracer with discovery enabled.</div>';
         return;
       }
 
       const metaParts = [];
       if (scanning) {
-        metaParts.push(total > 0 ? `Scanning ${done}/${total}...` : "Scanning...");
-      } else if (lastScanUtc) {
-        metaParts.push(`Last scan: ${lastScanUtc}`);
+        if (scanPhase === "ble") {
+          metaParts.push("BLE scan...");
+        } else {
+          metaParts.push(total > 0 ? `TCP scan ${done}/${total}...` : "Scanning...");
+        }
+      } else {
+        if (lastScanUtc) metaParts.push(`TCP scan: ${lastScanUtc}`);
+        if (bleLastScanUtc) metaParts.push(`BLE scan: ${bleLastScanUtc}`);
       }
       if (networks.length) metaParts.push(`Networks: ${networks.join(", ")}`);
       if (Number.isFinite(port) && port > 0) metaParts.push(`Port: ${port}`);
-      discoveryMeta.textContent = metaParts.join(" | ") || "Searching your LAN...";
+      if (candidates.length || bleCandidates.length) {
+        metaParts.push(`Found TCP ${candidates.length}, BLE ${bleCandidates.length}`);
+      }
+      discoveryMeta.textContent = metaParts.join(" | ") || "Searching your LAN and BLE...";
 
-      if (!candidates.length) {
+      if (!candidates.length && !bleCandidates.length) {
         const hint = scanning
           ? "No nodes found yet."
-          : "No nodes found. Make sure your computer and node are on the same network, and that the node's TCP interface is reachable.";
+          : "No nodes found yet. Make sure TCP nodes are reachable on your LAN and BLE nodes are advertising nearby.";
         discoveryList.innerHTML = `<div class="discovery-empty">${escapeHtml(hint)}</div>`;
         return;
       }
 
-      discoveryList.innerHTML = candidates.map((item) => {
-        const host = String((item && item.host) || "").trim();
-        if (!host) return "";
-        const itemPort = Number((item && item.port) || port);
-        const latency = item && item.latency_ms !== undefined && item.latency_ms !== null
-          ? `${item.latency_ms}ms`
-          : "";
-        const seen = item && item.last_seen_utc ? `seen ${item.last_seen_utc}` : "";
-        const meta = [seen, latency].filter(Boolean).join(" | ") || "reachable";
-        return `
-          <div class="discovery-item">
-            <div class="discovery-item-main">
-              <span class="discovery-item-host">${escapeHtml(host)}${itemPort ? ":" + escapeHtml(itemPort) : ""}</span>
-              <span class="discovery-item-meta">${escapeHtml(meta)}</span>
+      const sections = [];
+      if (candidates.length) {
+        const tcpItems = candidates.map((item) => {
+          const host = String((item && item.host) || "").trim();
+          if (!host) return "";
+          const itemPort = Number((item && item.port) || port);
+          const latency = item && item.latency_ms !== undefined && item.latency_ms !== null
+            ? `${item.latency_ms}ms`
+            : "";
+          const seen = item && item.last_seen_utc ? `seen ${item.last_seen_utc}` : "";
+          const meta = [seen, latency].filter(Boolean).join(" | ") || "reachable";
+          return `
+            <div class="discovery-item">
+              <div class="discovery-item-main">
+                <span class="discovery-item-host">${escapeHtml(host)}${itemPort ? ":" + escapeHtml(itemPort) : ""}</span>
+                <span class="discovery-item-meta">${escapeHtml(meta)}</span>
+              </div>
+              <button class="discovery-item-btn" type="button" data-target="${escapeHtml(host)}">Connect</button>
             </div>
-            <button class="discovery-item-btn" type="button" data-host="${escapeHtml(host)}">Connect</button>
+          `;
+        }).join("");
+        sections.push(`
+          <div class="discovery-section">
+            <div class="discovery-section-title">TCP (LAN)</div>
+            ${tcpItems}
           </div>
-        `;
-      }).join("");
+        `);
+      }
 
-      for (const btn of discoveryList.querySelectorAll("button[data-host]")) {
+      if (bleCandidates.length) {
+        const bleItems = bleCandidates.map((item) => {
+          const identifier = String((item && item.identifier) || "").trim();
+          const name = String((item && item.name) || "").trim();
+          const address = String((item && item.address) || "").trim();
+          const connectTargetRaw = String((item && item.connect_target) || "").trim();
+          const connectTarget = connectTargetRaw || (identifier ? `ble://${identifier}` : "");
+          if (!connectTarget) return "";
+          const title = (name && address)
+            ? `${name} (${address})`
+            : (name || address || identifier || "BLE node");
+          const seen = item && item.last_seen_utc ? `seen ${item.last_seen_utc}` : "";
+          const rssiRaw = Number((item && item.rssi));
+          const rssiText = Number.isFinite(rssiRaw) ? `${Math.trunc(rssiRaw)} dBm` : "";
+          const meta = [seen, rssiText].filter(Boolean).join(" | ") || "reachable";
+          return `
+            <div class="discovery-item">
+              <div class="discovery-item-main">
+                <span class="discovery-item-host">${escapeHtml(title)}</span>
+                <span class="discovery-item-meta">${escapeHtml(meta)}</span>
+              </div>
+              <button class="discovery-item-btn" type="button" data-target="${escapeHtml(connectTarget)}">Connect</button>
+            </div>
+          `;
+        }).join("");
+        sections.push(`
+          <div class="discovery-section">
+            <div class="discovery-section-title">Bluetooth (BLE)</div>
+            ${bleItems}
+          </div>
+        `);
+      }
+
+      discoveryList.innerHTML = sections.join("");
+
+      for (const btn of discoveryList.querySelectorAll("button[data-target]")) {
         btn.addEventListener("click", () => {
-          const host = String(btn.dataset.host || "").trim();
-          if (!host) return;
-          connectToHost(host);
+          const target = String(btn.dataset.target || "").trim();
+          if (!target) return;
+          connectToHost(target);
         });
       }
     }
@@ -3738,7 +3795,7 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     async function connectToHost(hostOverride) {
       const host = String((hostOverride !== undefined ? hostOverride : connectHostInput.value) || "").trim();
       if (!host) {
-        connectError.textContent = "Enter a node IP or hostname.";
+        connectError.textContent = "Enter a node target (TCP host or ble://...).";
         connectError.classList.add("visible");
         return;
       }

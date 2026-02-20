@@ -7,7 +7,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run the Meshtracer web UI (default) and optionally connect to a "
-            "Meshtastic node over TCP to continuously run traceroutes."
+            "Meshtastic node over TCP (WiFi/Ethernet) or BLE to continuously run traceroutes."
         )
     )
     parser.add_argument(
@@ -15,7 +15,8 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         default=None,
         help=(
-            "Optional IP address or hostname of your WiFi-connected Meshtastic node. "
+            "Optional target for your Meshtastic node. Use an IP/hostname for TCP, "
+            "or use ble://<identifier-or-address> for Bluetooth LE. "
             "If omitted, the web UI will prompt you to connect."
         ),
     )

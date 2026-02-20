@@ -13,12 +13,12 @@
     <div class="onboarding-card">
       <div class="onboarding-brand">Meshtracer</div>
       <div class="onboarding-tagline">
-        Enter the IP address or hostname of your WiFi-connected Meshtastic node to start tracing and populating the map.
+        Enter a Meshtastic target over TCP (WiFi/Ethernet) or BLE to start tracing and populating the map.
       </div>
       <div class="onboarding-form">
-        <label class="onboarding-label" for="connectHost">Node IP or hostname</label>
+        <label class="onboarding-label" for="connectHost">Node target</label>
         <div class="onboarding-row">
-          <input id="connectHost" type="text" inputmode="decimal" placeholder="192.168.1.50" autocomplete="off" spellcheck="false">
+          <input id="connectHost" type="text" inputmode="text" placeholder="192.168.1.50 or ble://my-node" autocomplete="off" spellcheck="false">
           <button id="connectBtn" class="connect-btn" type="button">Connect</button>
         </div>
         <div id="connectError" class="connect-error"></div>
@@ -26,6 +26,7 @@
           Examples:
           <code>192.168.1.50</code>
           <code>meshtastic.local</code>
+          <code>ble://my-node</code>
         </div>
         <div id="connectStatus" class="connect-status"></div>
         <div id="discoverySection" class="discovery">

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import importlib
 import ipaddress
 import socket
 import threading
@@ -100,6 +101,63 @@ def _check_tcp(host: str, port: int, timeout_seconds: float) -> tuple[bool, floa
             pass
 
 
+def _discover_meshtastic_ble_candidates() -> dict[str, dict[str, Any]]:
+    try:
+        ble_module = importlib.import_module("meshtastic.ble_interface")
+    except Exception:
+        return {}
+
+    ble_interface = getattr(ble_module, "BLEInterface", None)
+    scan_fn = getattr(ble_interface, "scan", None)
+    if not callable(scan_fn):
+        return {}
+
+    try:
+        devices = scan_fn()
+    except Exception:
+        return {}
+
+    if devices is None:
+        return {}
+
+    try:
+        iterable = list(devices)
+    except Exception:
+        return {}
+
+    found: dict[str, dict[str, Any]] = {}
+    seen_utc = utc_now()
+    seen_epoch = time.time()
+    for device in iterable:
+        if device is None:
+            continue
+        name = str(getattr(device, "name", "") or "").strip()
+        address = str(getattr(device, "address", "") or "").strip()
+        identifier = address or name
+        if not identifier:
+            continue
+
+        rssi_raw = getattr(device, "rssi", None)
+        rssi: int | None = None
+        if rssi_raw is not None:
+            try:
+                rssi = int(rssi_raw)
+            except (TypeError, ValueError):
+                rssi = None
+
+        key = address.lower() if address else f"name:{name.lower()}"
+        found[key] = {
+            "identifier": identifier,
+            "name": name or None,
+            "address": address or None,
+            "rssi": rssi,
+            "connect_target": f"ble://{identifier}",
+            "last_seen_utc": seen_utc,
+            "last_seen_epoch": seen_epoch,
+        }
+    return found
+
+
 class LanDiscoverer:
     def __init__(
         self,
@@ -126,11 +184,14 @@ class LanDiscoverer:
         self._lock = threading.Lock()
         self._enabled = True
         self._scanning = False
+        self._scan_phase = "idle"
         self._progress_total = 0
         self._progress_done = 0
         self._last_scan_utc: str | None = None
         self._networks: list[str] = []
         self._found: dict[str, dict[str, Any]] = {}
+        self._ble_last_scan_utc: str | None = None
+        self._ble_found: dict[str, dict[str, Any]] = {}
 
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
@@ -167,6 +228,10 @@ class LanDiscoverer:
             candidates.sort(key=lambda item: float(item.get("last_seen_epoch", 0)), reverse=True)
             if self._max_results > 0:
                 candidates = candidates[: self._max_results]
+            ble_candidates = list(self._ble_found.values())
+            ble_candidates.sort(key=lambda item: float(item.get("last_seen_epoch", 0)), reverse=True)
+            if self._max_results > 0:
+                ble_candidates = ble_candidates[: self._max_results]
             # Strip internal fields for API.
             cleaned = [
                 {
@@ -178,15 +243,30 @@ class LanDiscoverer:
                 for item in candidates
                 if item.get("host")
             ]
+            cleaned_ble = [
+                {
+                    "identifier": str(item.get("identifier") or ""),
+                    "name": str(item.get("name") or "") or None,
+                    "address": str(item.get("address") or "") or None,
+                    "rssi": item.get("rssi"),
+                    "connect_target": str(item.get("connect_target") or ""),
+                    "last_seen_utc": item.get("last_seen_utc"),
+                }
+                for item in ble_candidates
+                if item.get("connect_target")
+            ]
             return {
                 "enabled": self._enabled,
                 "scanning": self._scanning,
+                "scan_phase": self._scan_phase,
                 "progress_done": self._progress_done,
                 "progress_total": self._progress_total,
                 "port": self._port,
                 "networks": list(self._networks),
                 "last_scan_utc": self._last_scan_utc,
                 "candidates": cleaned,
+                "ble_last_scan_utc": self._ble_last_scan_utc,
+                "ble_candidates": cleaned_ble,
             }
 
     def _run(self) -> None:
@@ -233,63 +313,68 @@ class LanDiscoverer:
 
         with self._lock:
             self._scanning = True
+            self._scan_phase = "tcp"
             self._progress_total = len(hosts)
             self._progress_done = 0
             self._networks = network_strs
             self._last_scan_utc = utc_now()
         self._notify_change()
 
-        if not hosts:
-            with self._lock:
-                self._scanning = False
-            self._notify_change()
-            return
-
-        max_workers = min(96, max(24, len(hosts) // 4))
         found: dict[str, dict[str, Any]] = {}
         last_progress_notify = time.monotonic()
+        if hosts:
+            max_workers = min(96, max(24, len(hosts) // 4))
 
-        def task(ip: str) -> tuple[str, bool, float]:
-            ok, elapsed = _check_tcp(ip, self._port, self._connect_timeout_seconds)
-            return ip, ok, elapsed
+            def task(ip: str) -> tuple[str, bool, float]:
+                ok, elapsed = _check_tcp(ip, self._port, self._connect_timeout_seconds)
+                return ip, ok, elapsed
 
-        try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(task, ip) for ip in hosts]
-                for fut in concurrent.futures.as_completed(futures):
-                    if self._stop_event.is_set():
-                        break
-                    ip, ok, elapsed = fut.result()
-                    with self._lock:
-                        self._progress_done += 1
-                        progress_done = self._progress_done
-                        progress_total = self._progress_total
-                    now_monotonic = time.monotonic()
-                    if (
-                        progress_done >= progress_total
-                        or (progress_done % self._progress_notify_every) == 0
-                        or (now_monotonic - last_progress_notify)
-                        >= self._progress_notify_min_interval_seconds
-                    ):
-                        last_progress_notify = now_monotonic
-                        self._notify_change()
-                    if not ok:
-                        continue
-                    found[ip] = {
-                        "host": ip,
-                        "port": self._port,
-                        "latency_ms": round(float(elapsed) * 1000.0, 1),
-                        "last_seen_utc": utc_now(),
-                        "last_seen_epoch": time.time(),
-                    }
-        except Exception:
-            # Best effort: discovery should never crash the app.
-            found = {}
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = [executor.submit(task, ip) for ip in hosts]
+                    for fut in concurrent.futures.as_completed(futures):
+                        if self._stop_event.is_set():
+                            break
+                        ip, ok, elapsed = fut.result()
+                        with self._lock:
+                            self._progress_done += 1
+                            progress_done = self._progress_done
+                            progress_total = self._progress_total
+                        now_monotonic = time.monotonic()
+                        if (
+                            progress_done >= progress_total
+                            or (progress_done % self._progress_notify_every) == 0
+                            or (now_monotonic - last_progress_notify)
+                            >= self._progress_notify_min_interval_seconds
+                        ):
+                            last_progress_notify = now_monotonic
+                            self._notify_change()
+                        if not ok:
+                            continue
+                        found[ip] = {
+                            "host": ip,
+                            "port": self._port,
+                            "latency_ms": round(float(elapsed) * 1000.0, 1),
+                            "last_seen_utc": utc_now(),
+                            "last_seen_epoch": time.time(),
+                        }
+            except Exception:
+                # Best effort: discovery should never crash the app.
+                found = {}
+
+        ble_found: dict[str, dict[str, Any]] = {}
+        if not self._stop_event.is_set():
+            with self._lock:
+                self._scan_phase = "ble"
+            self._notify_change()
+            ble_found = _discover_meshtastic_ble_candidates()
 
         with self._lock:
             # Merge to preserve "last seen" history across scans.
             for ip, item in found.items():
                 self._found[ip] = item
+            for key, item in ble_found.items():
+                self._ble_found[key] = item
 
             # Drop stale results after 10 minutes.
             cutoff = time.time() - 600.0
@@ -298,5 +383,12 @@ class LanDiscoverer:
                 for ip, item in self._found.items()
                 if float(item.get("last_seen_epoch") or 0) >= cutoff
             }
+            self._ble_found = {
+                key: item
+                for key, item in self._ble_found.items()
+                if float(item.get("last_seen_epoch") or 0) >= cutoff
+            }
+            self._ble_last_scan_utc = utc_now()
+            self._scan_phase = "idle"
             self._scanning = False
         self._notify_change()

@@ -363,6 +363,20 @@ body.sidebar-resizing {
   display: grid;
   gap: 8px;
 }
+.discovery-section {
+  display: grid;
+  gap: 8px;
+}
+.discovery-section + .discovery-section {
+  margin-top: 8px;
+}
+.discovery-section-title {
+  color: #b8c8e7;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .discovery-rescan {
   border: 1px solid rgba(45, 64, 101, 0.9);
   border-radius: 10px;
