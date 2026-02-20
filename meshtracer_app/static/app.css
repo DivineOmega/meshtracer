@@ -80,21 +80,24 @@ body.sidebar-resizing {
 }
 #sidebarToggle {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 10px;
+  right: 12px;
   z-index: 2;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: 1px solid #2d4065;
-  border-radius: 8px;
-  background: #122145;
-  color: #d9e4fb;
+  border-radius: 10px;
+  background: rgba(16, 26, 52, 0.92);
+  color: #cfe0ff;
   font-weight: 700;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
 }
 #sidebarToggle:hover {
-  background: #19305f;
+  background: rgba(20, 35, 69, 0.98);
 }
 #sidebar.collapsed #sidebarToggle {
   position: fixed;
@@ -127,7 +130,7 @@ body.sidebar-resizing {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 8px;
-  padding-right: 28px;
+  padding-right: 42px;
 }
 .head-actions {
   display: flex;
