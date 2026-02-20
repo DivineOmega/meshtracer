@@ -187,6 +187,7 @@ def main() -> int:
                     controller.run_traceroute,
                     controller.send_chat_message,
                     controller.get_chat_messages,
+                    controller.get_incoming_chat_messages,
                     controller.request_node_telemetry,
                     controller.request_node_info,
                     controller.request_node_position,

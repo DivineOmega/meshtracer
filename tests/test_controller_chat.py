@@ -54,6 +54,57 @@ class ControllerChatTests(unittest.TestCase):
                 self.assertEqual(len(direct_messages), 1)
                 self.assertEqual(direct_messages[0].get("text"), "hello direct")
                 self.assertEqual(direct_messages[0].get("peer_node_num"), 42)
+
+                incoming_chat_id = store.add_chat_message(
+                    "test:chat",
+                    text="incoming ping",
+                    message_type="direct",
+                    direction="incoming",
+                    peer_node_num=42,
+                    from_node_num=42,
+                    to_node_num=10,
+                    dedupe_key="incoming:1",
+                )
+                self.assertIsNotNone(incoming_chat_id)
+
+                ok, detail, incoming_messages, incoming_revision = controller.get_incoming_chat_messages(0, 100)
+                self.assertTrue(ok, detail)
+                self.assertGreaterEqual(incoming_revision, int(incoming_chat_id or 0))
+                self.assertEqual(len(incoming_messages), 1)
+                self.assertEqual(incoming_messages[0].get("text"), "incoming ping")
+                self.assertEqual(incoming_messages[0].get("direction"), "incoming")
+
+                ok, detail, empty_messages, _incoming_revision = controller.get_incoming_chat_messages(
+                    int(incoming_chat_id or 0),
+                    100,
+                )
+                self.assertTrue(ok, detail)
+                self.assertEqual(empty_messages, [])
+            finally:
+                store.close()
+
+    def test_get_incoming_chat_messages_rejects_invalid_cursor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                _ok, detail, _messages, _revision = controller.get_incoming_chat_messages(-1, 50)
+                self.assertEqual(detail, "no active mesh partition")
+
+                map_state = MapState(store=store, mesh_host="test:incoming-validation")
+                with controller._lock:
+                    controller._map_state = map_state
+
+                ok, detail, _messages, _revision = controller.get_incoming_chat_messages(-1, 50)
+                self.assertFalse(ok)
+                self.assertEqual(detail, "invalid_since_chat_id")
             finally:
                 store.close()
 
@@ -157,4 +208,3 @@ class ControllerChatTests(unittest.TestCase):
                 )
             finally:
                 store.close()
-

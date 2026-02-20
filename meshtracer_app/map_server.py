@@ -26,6 +26,7 @@ def start_map_server(
     run_traceroute: Callable[[int], tuple[bool, str]],
     send_chat_message: Callable[[str, int, str], tuple[bool, str]],
     get_chat_messages: Callable[[str, int, int], tuple[bool, str, list[dict[str, Any]], int]],
+    get_incoming_chat_messages: Callable[[int, int], tuple[bool, str, list[dict[str, Any]], int]],
     request_node_telemetry: Callable[[int, str], tuple[bool, str]],
     request_node_info: Callable[[int], tuple[bool, str]],
     request_node_position: Callable[[int], tuple[bool, str]],
@@ -45,6 +46,7 @@ def start_map_server(
             "/api/events": "_handle_get_api_events",
             "/api/config": "_handle_get_api_config",
             "/api/chat/messages": "_handle_get_api_chat_messages",
+            "/api/chat/incoming": "_handle_get_api_chat_incoming",
             "/healthz": "_handle_get_healthz",
         }
         _POST_ROUTES: dict[str, str] = {
@@ -201,6 +203,32 @@ def start_map_server(
                     "detail": detail,
                     "recipient_kind": recipient_kind,
                     "recipient_id": recipient_id,
+                    "messages": messages,
+                    "chat_revision": int(revision),
+                },
+                status=status,
+            )
+
+        def _handle_get_api_chat_incoming(self, url: Any) -> None:
+            query = parse_qs(url.query, keep_blank_values=False)
+            since_chat_id_raw = query.get("since_chat_id", [0])[0]
+            limit_raw = query.get("limit", [200])[0]
+            try:
+                since_chat_id = int(since_chat_id_raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "invalid_since_chat_id"}, status=400)
+                return
+            try:
+                limit = int(limit_raw)
+            except (TypeError, ValueError):
+                limit = 200
+            ok, detail, messages, revision = get_incoming_chat_messages(since_chat_id, limit)
+            status = 200 if ok else 400
+            self._send_json(
+                {
+                    "ok": ok,
+                    "detail": detail,
+                    "since_chat_id": int(since_chat_id),
                     "messages": messages,
                     "chat_revision": int(revision),
                 },

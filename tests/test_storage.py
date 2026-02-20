@@ -506,6 +506,28 @@ class SQLiteStoreTests(unittest.TestCase):
                 self.assertEqual(len(direct_messages), 1)
                 self.assertEqual(direct_messages[0].get("text"), "hello node 99")
                 self.assertEqual(direct_messages[0].get("peer_node_num"), 99)
+
+                incoming_since_zero = store.list_incoming_chat_messages_since(
+                    "node:chat",
+                    since_chat_id=0,
+                    limit=20,
+                )
+                self.assertEqual(
+                    [message.get("chat_id") for message in incoming_since_zero],
+                    [int(channel_chat_id or 0), int(direct_2 or 0)],
+                )
+                self.assertEqual(
+                    [message.get("direction") for message in incoming_since_zero],
+                    ["incoming", "incoming"],
+                )
+
+                incoming_after_direct_1 = store.list_incoming_chat_messages_since(
+                    "node:chat",
+                    since_chat_id=int(direct_1 or 0),
+                    limit=20,
+                )
+                self.assertEqual(len(incoming_after_direct_1), 1)
+                self.assertEqual(incoming_after_direct_1[0].get("text"), "reply from node 88")
             finally:
                 store.close()
 

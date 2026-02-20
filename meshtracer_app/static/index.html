@@ -93,6 +93,7 @@
                 <path d="M2 21v-1c0-2.8 2.2-5 5-5h2"></path>
                 <path d="M12 21v-1c0-2.2 1.8-4 4-4h1c2.2 0 4 1.8 4 4v1"></path>
               </svg>
+              <span id="chatUnreadBadge" class="chat-unread-badge" aria-hidden="true"></span>
             </button>
             <button id="configOpen" class="icon-btn" type="button" aria-label="Open config">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -245,6 +246,24 @@
               <input id="cfgMidWindow" class="cfg-input" type="number" min="1" step="1">
             </div>
           </div>
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-title">Chat Notifications</div>
+          <div class="cfg-grid">
+            <label class="cfg-toggle" for="cfgChatNotifDesktop">
+              <input id="cfgChatNotifDesktop" type="checkbox">
+              <span>Desktop notification popups</span>
+            </label>
+            <label class="cfg-toggle" for="cfgChatNotifSound">
+              <input id="cfgChatNotifSound" type="checkbox">
+              <span>Play sound on incoming chat</span>
+            </label>
+            <label class="cfg-toggle" for="cfgChatNotifFocused">
+              <input id="cfgChatNotifFocused" type="checkbox">
+              <span>Notify while this tab is focused</span>
+            </label>
+          </div>
+          <div id="cfgChatNotifHint" class="cfg-inline-hint"></div>
         </div>
         <div class="cfg-section">
           <div class="cfg-title">Storage</div>

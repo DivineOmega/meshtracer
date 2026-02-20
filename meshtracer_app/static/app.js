@@ -18,6 +18,7 @@
     const traceDetailsClose = document.getElementById("traceDetailsClose");
     const chatModal = document.getElementById("chatModal");
     const chatOpen = document.getElementById("chatOpen");
+    const chatUnreadBadge = document.getElementById("chatUnreadBadge");
     const chatClose = document.getElementById("chatClose");
     const chatRecipient = document.getElementById("chatRecipient");
     const chatRecipientWarning = document.getElementById("chatRecipientWarning");
@@ -58,6 +59,10 @@
     const cfgTracerouteRetentionHours = document.getElementById("cfgTracerouteRetentionHours");
     const cfgWebhookUrl = document.getElementById("cfgWebhookUrl");
     const cfgWebhookToken = document.getElementById("cfgWebhookToken");
+    const cfgChatNotifDesktop = document.getElementById("cfgChatNotifDesktop");
+    const cfgChatNotifSound = document.getElementById("cfgChatNotifSound");
+    const cfgChatNotifFocused = document.getElementById("cfgChatNotifFocused");
+    const cfgChatNotifHint = document.getElementById("cfgChatNotifHint");
     const cfgApply = document.getElementById("cfgApply");
     const cfgReset = document.getElementById("cfgReset");
     const cfgResetDatabase = document.getElementById("cfgResetDatabase");
@@ -132,10 +137,23 @@
       lastChatRevision: 0,
       chatStatusMessage: "",
       chatStatusError: false,
+      chatUnreadCount: 0,
+      chatNotifyMeshHost: "",
+      chatNotifyCursor: 0,
+      chatIncomingBusy: false,
+      chatIncomingPending: false,
+      chatNotificationSettings: {
+        desktop: false,
+        sound: false,
+        notifyFocused: false,
+      },
+      chatAudioCtx: null,
     };
     const FALLBACK_POLL_MS_CONNECTED = 30000;
     const FALLBACK_POLL_MS_DISCONNECTED = 3000;
     const LOG_FILTER_STORAGE_KEY = "meshtracer.logTypeFilters";
+    const CHAT_NOTIFICATION_SETTINGS_STORAGE_KEY = "meshtracer.chatNotificationSettings";
+    const CHAT_NOTIFICATION_CURSOR_STORAGE_PREFIX = "meshtracer.chatNotificationCursor:";
 
     function reportClientError(message, options = {}) {
       const text = String(message || "").trim();
@@ -258,6 +276,120 @@
       return `${String(kind || "").trim().toLowerCase()}:${Math.trunc(Number(id) || 0)}`;
     }
 
+    function chatNotificationCursorStorageKey(meshHost) {
+      const host = String(meshHost || "").trim();
+      if (!host) return "";
+      return `${CHAT_NOTIFICATION_CURSOR_STORAGE_PREFIX}${host}`;
+    }
+
+    function chatNotificationApiSupported() {
+      return typeof Notification === "function";
+    }
+
+    function normalizeChatNotificationSettings(raw) {
+      const value = raw && typeof raw === "object" ? raw : {};
+      return {
+        desktop: flagIsTrue(value.desktop),
+        sound: flagIsTrue(value.sound),
+        notifyFocused: flagIsTrue(value.notifyFocused),
+      };
+    }
+
+    function loadChatNotificationSettingsFromStorage() {
+      try {
+        const raw = localStorage.getItem(CHAT_NOTIFICATION_SETTINGS_STORAGE_KEY);
+        if (!raw) {
+          return normalizeChatNotificationSettings({});
+        }
+        return normalizeChatNotificationSettings(JSON.parse(String(raw)));
+      } catch (_e) {
+        return normalizeChatNotificationSettings({});
+      }
+    }
+
+    function saveChatNotificationSettingsToStorage() {
+      try {
+        localStorage.setItem(
+          CHAT_NOTIFICATION_SETTINGS_STORAGE_KEY,
+          JSON.stringify(normalizeChatNotificationSettings(state.chatNotificationSettings))
+        );
+      } catch (_e) {
+      }
+    }
+
+    function loadChatNotificationCursor(meshHost) {
+      const key = chatNotificationCursorStorageKey(meshHost);
+      if (!key) return null;
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed) || parsed < 0) return null;
+        return Math.trunc(parsed);
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    function saveChatNotificationCursor(meshHost, chatId) {
+      const key = chatNotificationCursorStorageKey(meshHost);
+      if (!key) return;
+      const chatIdInt = Math.max(0, Math.trunc(Number(chatId) || 0));
+      try {
+        localStorage.setItem(key, String(chatIdInt));
+      } catch (_e) {
+      }
+    }
+
+    function chatMessageId(message) {
+      const value = Number(message && message.chat_id);
+      if (!Number.isFinite(value) || value <= 0) return 0;
+      return Math.trunc(value);
+    }
+
+    function chatRecipientFromMessage(message) {
+      const kind = String(message && message.message_type || "").trim().toLowerCase();
+      if (kind === "channel") {
+        const channelIndex = Math.trunc(Number(message && message.channel_index) || 0);
+        if (channelIndex < 0) return null;
+        return { kind: "channel", id: channelIndex };
+      }
+      if (kind === "direct") {
+        const peerNodeNum = Math.trunc(Number(message && message.peer_node_num) || 0);
+        if (peerNodeNum <= 0) return null;
+        return { kind: "direct", id: peerNodeNum };
+      }
+      return null;
+    }
+
+    function chatRecipientKeyFromMessage(message) {
+      const recipient = chatRecipientFromMessage(message);
+      if (!recipient) return "";
+      return chatRecipientKey(recipient.kind, recipient.id);
+    }
+
+    function chatMessageMatchesActiveRecipient(message) {
+      if (!state.chatOpen) return false;
+      const activeKey = chatRecipientKey(state.chatRecipientKind, state.chatRecipientId);
+      if (!activeKey) return false;
+      return activeKey === chatRecipientKeyFromMessage(message);
+    }
+
+    function updateChatOpenButton() {
+      if (!chatOpen || !chatUnreadBadge) return;
+      const unreadCount = Math.max(0, Math.trunc(Number(state.chatUnreadCount) || 0));
+      const hasUnread = unreadCount > 0;
+      chatUnreadBadge.classList.toggle("visible", hasUnread);
+      chatUnreadBadge.textContent = hasUnread
+        ? (unreadCount > 99 ? "99+" : String(unreadCount))
+        : "";
+      chatOpen.classList.toggle("has-unread", hasUnread);
+      chatOpen.setAttribute(
+        "aria-label",
+        hasUnread ? `Open chat (${unreadCount} unread)` : "Open chat"
+      );
+    }
+
     function allKnownNodeNums(data) {
       const nodes = Array.isArray(data && data.nodes) ? data.nodes : [];
       const nums = [];
@@ -373,6 +505,323 @@
       if (!chatStatus) return;
       chatStatus.textContent = state.chatStatusMessage;
       chatStatus.classList.toggle("error", state.chatStatusError);
+    }
+
+    function activeMeshHostFromData(data) {
+      const host = String(data && data.mesh_host || "").trim();
+      if (!host || host === "-" || host === "disconnected") return "";
+      return host;
+    }
+
+    function syncChatNotificationPartition(data) {
+      const nextMeshHost = activeMeshHostFromData(data);
+      const chatRevision = chatRevisionFromData(data);
+      if (nextMeshHost === state.chatNotifyMeshHost) {
+        if (!nextMeshHost && state.chatNotifyCursor !== 0) {
+          state.chatNotifyCursor = 0;
+        }
+        if (chatRevision < state.chatNotifyCursor) {
+          state.chatNotifyCursor = Math.max(0, chatRevision);
+          if (nextMeshHost) saveChatNotificationCursor(nextMeshHost, state.chatNotifyCursor);
+        }
+        return;
+      }
+
+      state.chatNotifyMeshHost = nextMeshHost;
+      state.chatUnreadCount = 0;
+      state.chatIncomingPending = false;
+      if (!nextMeshHost) {
+        state.chatNotifyCursor = 0;
+        updateChatOpenButton();
+        return;
+      }
+
+      const storedCursor = loadChatNotificationCursor(nextMeshHost);
+      if (storedCursor === null) {
+        state.chatNotifyCursor = Math.max(0, chatRevision);
+        saveChatNotificationCursor(nextMeshHost, state.chatNotifyCursor);
+      } else {
+        state.chatNotifyCursor = Math.max(0, storedCursor);
+      }
+      updateChatOpenButton();
+    }
+
+    function chatNotificationPermission() {
+      if (!chatNotificationApiSupported()) return "unsupported";
+      return String(Notification.permission || "default");
+    }
+
+    function setChatNotificationHint(message) {
+      if (!cfgChatNotifHint) return;
+      cfgChatNotifHint.textContent = String(message || "").trim();
+    }
+
+    function updateChatNotificationHint() {
+      const permission = chatNotificationPermission();
+      if (permission === "unsupported") {
+        setChatNotificationHint("Desktop notifications are not supported in this browser.");
+        return;
+      }
+      if (permission === "denied") {
+        setChatNotificationHint("Desktop notifications are blocked in browser permissions for this site.");
+        return;
+      }
+      if (permission === "granted") {
+        setChatNotificationHint("Desktop notifications are allowed for this site.");
+        return;
+      }
+      setChatNotificationHint("Desktop notifications require browser permission the first time you enable them.");
+    }
+
+    function applyChatNotificationSettingsToForm() {
+      const desktopSupported = chatNotificationApiSupported();
+      if (cfgChatNotifDesktop) {
+        cfgChatNotifDesktop.disabled = !desktopSupported;
+        cfgChatNotifDesktop.checked = desktopSupported && Boolean(state.chatNotificationSettings.desktop);
+      }
+      if (cfgChatNotifSound) cfgChatNotifSound.checked = Boolean(state.chatNotificationSettings.sound);
+      if (cfgChatNotifFocused) cfgChatNotifFocused.checked = Boolean(state.chatNotificationSettings.notifyFocused);
+      updateChatNotificationHint();
+    }
+
+    function notificationWindowIsFocused() {
+      if (document.visibilityState && document.visibilityState !== "visible") return false;
+      if (typeof document.hasFocus !== "function") return true;
+      try {
+        return Boolean(document.hasFocus());
+      } catch (_e) {
+        return true;
+      }
+    }
+
+    function shouldPlayNotificationWhileFocused() {
+      return Boolean(state.chatNotificationSettings.notifyFocused) || !notificationWindowIsFocused();
+    }
+
+    function chatMessagePreviewText(message) {
+      const text = String(message && message.text || "").trim();
+      if (!text) return "New chat message";
+      if (text.length <= 120) return text;
+      return `${text.slice(0, 117)}...`;
+    }
+
+    function chatMessageSenderLabel(message) {
+      const senderNodeNum = Number(message && message.from_node_num);
+      if (!Number.isFinite(senderNodeNum)) return "Node";
+      return chatNodeLabel(Math.trunc(senderNodeNum));
+    }
+
+    function chatNotificationTitleForMessage(message, data) {
+      const recipient = chatRecipientFromMessage(message);
+      const sender = chatMessageSenderLabel(message);
+      if (!recipient) return "Incoming chat";
+      if (recipient.kind === "channel") {
+        const names = chatChannelNamesFromData(data);
+        const label = chatChannelLabel(recipient.id, names);
+        return `${sender} in ${label}`;
+      }
+      return `Direct message from ${sender}`;
+    }
+
+    function openChatForMessage(message) {
+      const recipient = chatRecipientFromMessage(message);
+      if (!recipient) return;
+      openChat({
+        recipientKind: recipient.kind,
+        recipientId: recipient.id,
+      });
+    }
+
+    function showDesktopNotification(title, body, message, data) {
+      if (!chatNotificationApiSupported()) return;
+      if (chatNotificationPermission() !== "granted") return;
+      const recipientKey = chatRecipientKeyFromMessage(message) || "incoming";
+      try {
+        const note = new Notification(String(title || "Incoming chat"), {
+          body: String(body || ""),
+          tag: `meshtracer-chat-${recipientKey}`,
+        });
+        note.onclick = () => {
+          try {
+            window.focus();
+          } catch (_e) {
+          }
+          openChatForMessage(message);
+          try {
+            note.close();
+          } catch (_e) {
+          }
+        };
+      } catch (_e) {
+      }
+    }
+
+    function showDesktopNotificationSummary(messages, data) {
+      const total = Array.isArray(messages) ? messages.length : 0;
+      if (total <= 0) return;
+      const first = messages[0];
+      const sender = chatMessageSenderLabel(first);
+      const preview = chatMessagePreviewText(first);
+      const suffix = total > 1 ? `${total} new messages` : "1 new message";
+      showDesktopNotification(suffix, `${sender}: ${preview}`, first, data);
+    }
+
+    function playChatNotificationSound() {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (typeof AudioCtx !== "function") return;
+      try {
+        if (!state.chatAudioCtx) {
+          state.chatAudioCtx = new AudioCtx();
+        }
+        const ctx = state.chatAudioCtx;
+        if (ctx.state === "suspended") {
+          ctx.resume().catch(() => {});
+        }
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(880, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.055, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      } catch (_e) {
+      }
+    }
+
+    function shouldNotifyForMessage(message) {
+      if (!message || typeof message !== "object") return false;
+      if (chatMessageMatchesActiveRecipient(message)) return false;
+      return shouldPlayNotificationWhileFocused();
+    }
+
+    async function enableDesktopNotifications(enabled) {
+      const nextEnabled = Boolean(enabled);
+      if (!nextEnabled) {
+        state.chatNotificationSettings.desktop = false;
+        saveChatNotificationSettingsToStorage();
+        applyChatNotificationSettingsToForm();
+        return;
+      }
+      if (!chatNotificationApiSupported()) {
+        state.chatNotificationSettings.desktop = false;
+        saveChatNotificationSettingsToStorage();
+        applyChatNotificationSettingsToForm();
+        return;
+      }
+      if (chatNotificationPermission() === "denied") {
+        state.chatNotificationSettings.desktop = false;
+        saveChatNotificationSettingsToStorage();
+        applyChatNotificationSettingsToForm();
+        return;
+      }
+      if (chatNotificationPermission() !== "granted") {
+        try {
+          const permission = await Notification.requestPermission();
+          if (String(permission || "").toLowerCase() !== "granted") {
+            state.chatNotificationSettings.desktop = false;
+            saveChatNotificationSettingsToStorage();
+            applyChatNotificationSettingsToForm();
+            return;
+          }
+        } catch (_e) {
+          state.chatNotificationSettings.desktop = false;
+          saveChatNotificationSettingsToStorage();
+          applyChatNotificationSettingsToForm();
+          return;
+        }
+      }
+      state.chatNotificationSettings.desktop = true;
+      saveChatNotificationSettingsToStorage();
+      applyChatNotificationSettingsToForm();
+    }
+
+    async function fetchIncomingChatDeltas(data, options = {}) {
+      const force = Boolean(options.force);
+      const meshHost = activeMeshHostFromData(data);
+      if (!meshHost) return;
+      if (meshHost !== state.chatNotifyMeshHost) return;
+      const chatRevision = chatRevisionFromData(data);
+      if (!force && chatRevision <= state.chatNotifyCursor) return;
+
+      const sinceChatId = Math.max(0, Math.trunc(Number(state.chatNotifyCursor) || 0));
+      const query = new URLSearchParams({
+        since_chat_id: String(sinceChatId),
+        limit: "500",
+      });
+      const response = await fetch(`/api/chat/incoming?${query.toString()}`, { cache: "no-store" });
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (_e) {
+      }
+      if (!response.ok || !body || body.ok === false) {
+        return;
+      }
+
+      const messages = Array.isArray(body.messages) ? body.messages : [];
+      let highestSeenChatId = Math.max(
+        sinceChatId,
+        numericRevision(body.chat_revision, chatRevision),
+      );
+      const notifyCandidates = [];
+      let unreadIncrement = 0;
+      for (const message of messages) {
+        const chatId = chatMessageId(message);
+        if (chatId > highestSeenChatId) highestSeenChatId = chatId;
+        const direction = String(message && message.direction || "").trim().toLowerCase();
+        if (direction !== "incoming") continue;
+        if (chatMessageMatchesActiveRecipient(message)) continue;
+        unreadIncrement += 1;
+        if (!shouldNotifyForMessage(message)) continue;
+        notifyCandidates.push(message);
+      }
+
+      state.chatNotifyCursor = Math.max(state.chatNotifyCursor, highestSeenChatId);
+      saveChatNotificationCursor(meshHost, state.chatNotifyCursor);
+
+      if (unreadIncrement > 0) {
+        state.chatUnreadCount = Math.max(0, state.chatUnreadCount + unreadIncrement);
+        updateChatOpenButton();
+      }
+
+      if (notifyCandidates.length <= 0) return;
+      if (state.chatNotificationSettings.sound) {
+        playChatNotificationSound();
+      }
+      if (!state.chatNotificationSettings.desktop) return;
+      if (chatNotificationPermission() !== "granted") return;
+      if (notifyCandidates.length === 1) {
+        const message = notifyCandidates[0];
+        showDesktopNotification(
+          chatNotificationTitleForMessage(message, data),
+          chatMessagePreviewText(message),
+          message,
+          data,
+        );
+        return;
+      }
+      showDesktopNotificationSummary(notifyCandidates, data);
+    }
+
+    function scheduleIncomingChatDeltaFetch(data, options = {}) {
+      if (state.chatIncomingBusy) {
+        state.chatIncomingPending = true;
+        return;
+      }
+      state.chatIncomingBusy = true;
+      fetchIncomingChatDeltas(data, options)
+        .catch((_e) => {})
+        .finally(() => {
+          state.chatIncomingBusy = false;
+          if (!state.chatIncomingPending) return;
+          state.chatIncomingPending = false;
+          scheduleIncomingChatDeltaFetch(state.lastServerData || data, { force: false });
+        });
     }
 
     function positionChatModal() {
@@ -600,12 +1049,20 @@
     }
 
     function openChat(options = {}) {
+      const recipientKindRaw = String(options.recipientKind || "").trim().toLowerCase();
+      const recipientIdValue = Number(options.recipientId);
+      if ((recipientKindRaw === "channel" || recipientKindRaw === "direct") && Number.isFinite(recipientIdValue)) {
+        state.chatRecipientKind = recipientKindRaw;
+        state.chatRecipientId = Math.trunc(recipientIdValue);
+      }
       const nodeNumValue = Number(options.nodeNum);
       if (Number.isFinite(nodeNumValue)) {
         state.chatRecipientKind = "direct";
         state.chatRecipientId = Math.trunc(nodeNumValue);
       }
       state.chatOpen = true;
+      state.chatUnreadCount = 0;
+      updateChatOpenButton();
       setChatStatus("", { error: false });
       renderChatPanel(state.lastServerData);
       loadChatMessages({ force: true });
@@ -617,6 +1074,7 @@
 
     function closeChat() {
       state.chatOpen = false;
+      updateChatOpenButton();
       renderChatPanel(state.lastServerData);
       try {
         if (chatOpen) chatOpen.focus();
@@ -3222,6 +3680,7 @@
       );
       const logsRevision = logRevisionOf(data);
       const chatRevision = chatRevisionFromData(data);
+      syncChatNotificationPartition(data);
       const chatChanged = force || chatRevision !== state.lastChatRevision;
       state.lastServerData = data;
 
@@ -3254,6 +3713,10 @@
 
       if (queueModal && !queueModal.classList.contains("hidden")) {
         renderQueueModal(data);
+      }
+
+      if (chatChanged) {
+        scheduleIncomingChatDeltaFetch(data, { force: force && state.chatNotifyCursor < chatRevision });
       }
       state.lastChatRevision = chatRevision;
       if (state.chatOpen && chatChanged) {
@@ -3862,6 +4325,9 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
       state.logTypeFilters = normalizedLogTypeFilters(state.logTypeFilters);
     }
     syncLogFilterControls();
+    state.chatNotificationSettings = loadChatNotificationSettingsFromStorage();
+    applyChatNotificationSettingsToForm();
+    updateChatOpenButton();
 
     connectBtn.addEventListener("click", () => connectToHost());
     disconnectBtn.addEventListener("click", () => disconnectFromHost());
@@ -3926,6 +4392,25 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
         if (event.key === "Enter") {
           applyConfig();
         }
+      });
+    }
+    if (cfgChatNotifDesktop) {
+      cfgChatNotifDesktop.addEventListener("change", async () => {
+        await enableDesktopNotifications(Boolean(cfgChatNotifDesktop.checked));
+      });
+    }
+    if (cfgChatNotifSound) {
+      cfgChatNotifSound.addEventListener("change", () => {
+        state.chatNotificationSettings.sound = Boolean(cfgChatNotifSound.checked);
+        saveChatNotificationSettingsToStorage();
+        applyChatNotificationSettingsToForm();
+      });
+    }
+    if (cfgChatNotifFocused) {
+      cfgChatNotifFocused.addEventListener("change", () => {
+        state.chatNotificationSettings.notifyFocused = Boolean(cfgChatNotifFocused.checked);
+        saveChatNotificationSettingsToStorage();
+        applyChatNotificationSettingsToForm();
       });
     }
     connectHostInput.addEventListener("keydown", (event) => {

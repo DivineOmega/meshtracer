@@ -9,6 +9,24 @@ from .storage_repo_base import StoreRepositoryBase
 
 
 class ChatRepository(StoreRepositoryBase):
+    def _chat_message_from_row(self, row: Any) -> dict[str, Any]:
+        packet_raw = self._json_loads(row["packet_json"], {})
+        packet_value = packet_raw if isinstance(packet_raw, (dict, list)) else {}
+        return {
+            "chat_id": int(row["chat_id"]),
+            "direction": self._chat_direction_text(row["direction"]),
+            "message_type": self._chat_message_type_text(row["message_type"]),
+            "channel_index": self._to_int(row["channel_index"]),
+            "peer_node_num": self._to_int(row["peer_node_num"]),
+            "from_node_num": self._to_int(row["from_node_num"]),
+            "to_node_num": self._to_int(row["to_node_num"]),
+            "packet_id": self._to_int(row["packet_id"]),
+            "rx_time": self._to_float(row["rx_time"]),
+            "text": str(row["text"] or ""),
+            "packet": packet_value,
+            "created_at_utc": str(row["created_at_utc"] or ""),
+        }
+
     def add_chat_message(
         self,
         mesh_host: str,
@@ -229,22 +247,48 @@ class ChatRepository(StoreRepositoryBase):
 
         messages: list[dict[str, Any]] = []
         for row in reversed(rows):
-            packet_raw = self._json_loads(row["packet_json"], {})
-            packet_value = packet_raw if isinstance(packet_raw, (dict, list)) else {}
-            messages.append(
-                {
-                    "chat_id": int(row["chat_id"]),
-                    "direction": self._chat_direction_text(row["direction"]),
-                    "message_type": self._chat_message_type_text(row["message_type"]),
-                    "channel_index": self._to_int(row["channel_index"]),
-                    "peer_node_num": self._to_int(row["peer_node_num"]),
-                    "from_node_num": self._to_int(row["from_node_num"]),
-                    "to_node_num": self._to_int(row["to_node_num"]),
-                    "packet_id": self._to_int(row["packet_id"]),
-                    "rx_time": self._to_float(row["rx_time"]),
-                    "text": str(row["text"] or ""),
-                    "packet": packet_value,
-                    "created_at_utc": str(row["created_at_utc"] or ""),
-                }
-            )
+            messages.append(self._chat_message_from_row(row))
+        return messages
+
+    def list_incoming_chat_messages_since(
+        self,
+        mesh_host: str,
+        *,
+        since_chat_id: Any,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        host = str(mesh_host or "").strip()
+        if not host:
+            return []
+
+        since_int = self._to_int(since_chat_id)
+        if since_int is None:
+            since_int = 0
+        since_int = max(0, since_int)
+
+        try:
+            limit_int = int(limit)
+        except (TypeError, ValueError):
+            limit_int = 200
+        limit_int = max(1, min(1000, limit_int))
+
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT
+                  chat_id, direction, message_type, channel_index, peer_node_num,
+                  from_node_num, to_node_num, packet_id, rx_time, text, packet_json, created_at_utc
+                FROM chat_messages
+                WHERE mesh_host = ?
+                  AND direction = 'incoming'
+                  AND chat_id > ?
+                ORDER BY chat_id ASC
+                LIMIT ?
+                """,
+                (host, since_int, limit_int),
+            ).fetchall()
+
+        messages: list[dict[str, Any]] = []
+        for row in rows:
+            messages.append(self._chat_message_from_row(row))
         return messages

@@ -283,6 +283,36 @@ class ControllerOperationsMixin:
         revision = self._store.latest_chat_revision(mesh_host)
         return True, "ok", messages, revision
 
+    def get_incoming_chat_messages(
+        self,
+        since_chat_id: Any = 0,
+        limit: Any = 200,
+    ) -> tuple[bool, str, list[dict[str, Any]], int]:
+        mesh_host = self._active_mesh_host()
+        if not mesh_host:
+            return False, "no active mesh partition", [], 0
+
+        try:
+            since_chat_id_int = int(since_chat_id)
+        except (TypeError, ValueError):
+            return False, "invalid_since_chat_id", [], 0
+        if since_chat_id_int < 0:
+            return False, "invalid_since_chat_id", [], 0
+
+        try:
+            limit_int = int(limit)
+        except (TypeError, ValueError):
+            limit_int = 200
+        limit_int = max(1, min(1000, limit_int))
+
+        messages = self._store.list_incoming_chat_messages_since(
+            mesh_host,
+            since_chat_id=since_chat_id_int,
+            limit=limit_int,
+        )
+        revision = self._store.latest_chat_revision(mesh_host)
+        return True, "ok", messages, revision
+
     def send_chat_message(
         self,
         recipient_kind: Any,

@@ -163,6 +163,7 @@ body.sidebar-resizing {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  position: relative;
 }
 .icon-btn:hover {
   background: rgba(20, 35, 69, 0.98);
@@ -174,6 +175,32 @@ body.sidebar-resizing {
 .icon-btn svg {
   width: 16px;
   height: 16px;
+}
+.icon-btn.has-unread {
+  border-color: #547bc0;
+}
+.chat-unread-badge {
+  position: absolute;
+  top: -6px;
+  right: -5px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(45, 64, 101, 0.9);
+  background: #ff6b8e;
+  color: #fff4f7;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-sizing: border-box;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+}
+.chat-unread-badge.visible {
+  display: inline-flex;
 }
 .mesh-host-row {
   display: flex;
@@ -650,6 +677,34 @@ body.sidebar-resizing {
   display: grid;
   grid-template-columns: 1fr;
   gap: 6px;
+}
+.cfg-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #d9e4fb;
+  font-size: 12px;
+  border: 1px solid #2d4065;
+  border-radius: 10px;
+  background: rgba(16, 26, 52, 0.62);
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.cfg-toggle input {
+  margin: 0;
+  width: 15px;
+  height: 15px;
+  accent-color: #6fa6ff;
+  flex: 0 0 auto;
+}
+.cfg-inline-hint {
+  margin-top: 8px;
+  color: #9fb0d1;
+  font-size: 11px;
+  line-height: 1.35;
+  min-height: 1.3em;
+  overflow-wrap: anywhere;
 }
 .cfg-label-row {
   display: flex;

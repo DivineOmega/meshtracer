@@ -296,6 +296,19 @@ class SQLiteStore:
             limit=limit,
         )
 
+    def list_incoming_chat_messages_since(
+        self,
+        mesh_host: str,
+        *,
+        since_chat_id: Any,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        return self._chat_repo.list_incoming_chat_messages_since(
+            mesh_host,
+            since_chat_id=since_chat_id,
+            limit=limit,
+        )
+
     def snapshot(
         self,
         mesh_host: str,
