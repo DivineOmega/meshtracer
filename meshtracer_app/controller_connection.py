@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import importlib
 import os
+import sys
 import threading
 from typing import Any
 
@@ -37,6 +39,126 @@ class ControllerConnectionMixin:
             return "ble", (endpoint or None), normalized
 
         raise ValueError(f"unsupported connection scheme '{scheme}' (supported: tcp://, ble://)")
+
+    @staticmethod
+    def _enable_ble_start_notify_workaround(interface_mod: Any) -> bool:
+        """Force BlueZ StartNotify for Meshtastic BLE to avoid AcquireNotify failures."""
+        if not str(sys.platform).startswith("linux"):
+            return False
+
+        ble_client_cls = getattr(interface_mod, "BLEClient", None)
+        original_start_notify = getattr(ble_client_cls, "start_notify", None)
+        if not callable(original_start_notify):
+            return False
+        if getattr(original_start_notify, "__meshtracer_bluez_start_notify_patch__", False):
+            return False
+        logradio_uuids = {
+            str(getattr(interface_mod, "LOGRADIO_UUID", "") or "").strip().lower(),
+            str(getattr(interface_mod, "LEGACY_LOGRADIO_UUID", "") or "").strip().lower(),
+        }
+        logradio_uuids.discard("")
+
+        def patched_start_notify(self: Any, *args: Any, **kwargs: Any) -> Any:
+            char_specifier = args[0] if args else kwargs.get("char_specifier")
+            try:
+                bleak_start_notify = getattr(getattr(self, "bleak_client", None), "start_notify", None)
+                bleak_services = getattr(getattr(self, "bleak_client", None), "services", None)
+                get_characteristic = getattr(bleak_services, "get_characteristic", None)
+                if callable(get_characteristic) and char_specifier is not None:
+                    characteristic = get_characteristic(char_specifier)
+                    char_obj = getattr(characteristic, "obj", None)
+                    if (
+                        isinstance(char_obj, tuple)
+                        and len(char_obj) >= 2
+                        and isinstance(char_obj[1], dict)
+                    ):
+                        # Old Bleak backends pick AcquireNotify when this key exists.
+                        char_obj[1].pop("NotifyAcquired", None)
+                if callable(bleak_start_notify):
+                    params = inspect.signature(bleak_start_notify).parameters
+                    has_var_kwargs = any(
+                        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+                    )
+                    if "bluez" in params or has_var_kwargs:
+                        bluez_arg = kwargs.get("bluez")
+                        if isinstance(bluez_arg, dict):
+                            merged = dict(bluez_arg)
+                        else:
+                            merged = {}
+                        merged.setdefault("use_start_notify", True)
+                        kwargs["bluez"] = merged
+            except Exception:
+                # Never block BLE connect path because of a compatibility hint.
+                pass
+            try:
+                return original_start_notify(self, *args, **kwargs)
+            except Exception as exc:
+                # LOGRADIO notifications are optional for Meshtracer operation.
+                # Some BlueZ stacks report "Notify acquired" on this characteristic
+                # even when core data path notifications still work.
+                char_key = str(char_specifier or "").strip().lower()
+                text = str(exc or "")
+                if (
+                    char_key in logradio_uuids
+                    and "org.bluez.Error.NotPermitted" in text
+                    and "Notify acquired" in text
+                ):
+                    return None
+                raise
+
+        setattr(patched_start_notify, "__meshtracer_bluez_start_notify_patch__", True)
+        setattr(ble_client_cls, "start_notify", patched_start_notify)
+        return True
+
+    @staticmethod
+    def _enable_bluez_backend_start_notify_workaround() -> bool:
+        """Patch Bleak BlueZ backend to favor StartNotify over AcquireNotify."""
+        if not str(sys.platform).startswith("linux"):
+            return False
+
+        try:
+            bluez_client_mod = importlib.import_module("bleak.backends.bluezdbus.client")
+        except Exception:
+            return False
+
+        bluez_client_cls = getattr(bluez_client_mod, "BleakClientBlueZDBus", None)
+        original_start_notify = getattr(bluez_client_cls, "start_notify", None)
+        if not callable(original_start_notify):
+            return False
+        if getattr(original_start_notify, "__meshtracer_bluez_start_notify_patch__", False):
+            return False
+
+        params = inspect.signature(original_start_notify).parameters
+        has_var_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        accepts_bluez = "bluez" in params or has_var_kwargs
+
+        async def patched_start_notify(self: Any, characteristic: Any, callback: Any, **kwargs: Any) -> Any:
+            try:
+                char_obj = getattr(characteristic, "obj", None)
+                if (
+                    isinstance(char_obj, tuple)
+                    and len(char_obj) >= 2
+                    and isinstance(char_obj[1], dict)
+                ):
+                    char_obj[1].pop("NotifyAcquired", None)
+                if accepts_bluez:
+                    bluez_arg = kwargs.get("bluez")
+                    if isinstance(bluez_arg, dict):
+                        merged = dict(bluez_arg)
+                    else:
+                        merged = {}
+                    merged.setdefault("use_start_notify", True)
+                    kwargs["bluez"] = merged
+            except Exception:
+                pass
+
+            if accepts_bluez:
+                return await original_start_notify(self, characteristic, callback, **kwargs)
+            return await original_start_notify(self, characteristic, callback)
+
+        setattr(patched_start_notify, "__meshtracer_bluez_start_notify_patch__", True)
+        setattr(bluez_client_cls, "start_notify", patched_start_notify)
+        return True
 
     def connect(self, host: str) -> tuple[bool, str]:
         target_raw = str(host or "").strip()
@@ -95,6 +217,12 @@ class ControllerConnectionMixin:
             if transport == "tcp":
                 interface = interface_mod.TCPInterface(hostname=str(endpoint))
             else:
+                meshtastic_ble_patch = self._enable_ble_start_notify_workaround(interface_mod)
+                bleak_backend_patch = self._enable_bluez_backend_start_notify_workaround()
+                if meshtastic_ble_patch or bleak_backend_patch:
+                    self._emit(
+                        f"[{utc_now()}] Linux BLE workaround enabled: forcing StartNotify."
+                    )
                 interface = interface_mod.BLEInterface(address=endpoint)
         except Exception as exc:
             self._emit_error(f"[{utc_now()}] Connection failed: {exc}")
