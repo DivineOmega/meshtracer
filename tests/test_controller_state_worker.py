@@ -194,6 +194,98 @@ class ControllerStateAndWorkerTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_automatic_mode_picks_recent_db_node(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                ok, detail = controller.set_config({"traceroute_behavior": "automatic", "heard_window": 120})
+                self.assertTrue(ok, detail)
+
+                now = time.time()
+                store.upsert_node(
+                    "test:auto-db",
+                    {
+                        "num": 42,
+                        "id": "!node42",
+                        "long_name": "Node 42",
+                        "short_name": "N42",
+                        "last_heard": now,
+                    },
+                )
+
+                iface = _DummyTraceInterface(local_num=1)
+                map_state = MapState(store=store, mesh_host="test:auto-db")
+                traceroute_capture = {"result": None}
+                stop_event = threading.Event()
+                wake_event = threading.Event()
+
+                worker = threading.Thread(
+                    target=controller._traceroute_worker,
+                    args=(iface, map_state, traceroute_capture, stop_event, wake_event, "test-host"),
+                    daemon=True,
+                )
+                worker.start()
+                time.sleep(0.08)
+                stop_event.set()
+                wake_event.set()
+                worker.join(timeout=1.0)
+
+                self.assertEqual(iface.trace_calls, [(42, 7)])
+            finally:
+                store.close()
+
+    def test_automatic_mode_ignores_interface_cache_when_db_is_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+                ok, detail = controller.set_config({"traceroute_behavior": "automatic", "heard_window": 120})
+                self.assertTrue(ok, detail)
+
+                iface = _DummyTraceInterface(local_num=1)
+                iface.nodesByNum = {
+                    77: {
+                        "num": 77,
+                        "lastHeard": time.time(),
+                        "user": {"id": "!node77", "longName": "Node 77", "shortName": "N77"},
+                    }
+                }
+                map_state = MapState(store=store, mesh_host="test:auto-interface-only")
+                map_state.update_nodes_from_interface = lambda _interface: False  # type: ignore[assignment]
+                traceroute_capture = {"result": None}
+                stop_event = threading.Event()
+                wake_event = threading.Event()
+
+                worker = threading.Thread(
+                    target=controller._traceroute_worker,
+                    args=(iface, map_state, traceroute_capture, stop_event, wake_event, "test-host"),
+                    daemon=True,
+                )
+                worker.start()
+                time.sleep(0.08)
+                stop_event.set()
+                wake_event.set()
+                worker.join(timeout=1.0)
+
+                self.assertEqual(iface.trace_calls, [])
+            finally:
+                store.close()
+
     def test_manual_mode_worker_does_not_auto_pick_targets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"

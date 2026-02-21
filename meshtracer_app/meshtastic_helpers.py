@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import random
+from collections.abc import Iterable
 from typing import Any
 
 from .common import utc_now
@@ -216,22 +217,23 @@ def parse_traceroute_response(interface: Any, mesh_pb2_mod: Any, packet: dict[st
     }
 
 
-def pick_recent_node(interface: Any, heard_window_seconds: int) -> tuple[dict[str, Any] | None, float | None, int]:
+def pick_recent_node_from_nodes(
+    nodes: Iterable[Any],
+    heard_window_seconds: int,
+    *,
+    local_node_num: Any = None,
+) -> tuple[dict[str, Any] | None, float | None, int]:
     now = time.time()
     # Allow small clock skew but ignore implausibly future timestamps.
     max_future_skew_seconds = 300.0
-    local_num = getattr(getattr(interface, "localNode", None), "nodeNum", None)
     try:
-        local_num_int = int(local_num) if local_num is not None else None
+        local_num_int = int(local_node_num) if local_node_num is not None else None
     except (TypeError, ValueError):
         local_num_int = None
 
     candidates: list[tuple[dict[str, Any], float]] = []
-    nodes_by_num = getattr(interface, "nodesByNum", {})
-    if not isinstance(nodes_by_num, dict):
-        return None, None, 0
 
-    for node in nodes_by_num.values():
+    for node in nodes:
         if not isinstance(node, dict):
             continue
         node_num = node.get("num")
@@ -265,6 +267,18 @@ def pick_recent_node(interface: Any, heard_window_seconds: int) -> tuple[dict[st
 
     picked, age = random.choice(candidates)
     return picked, age, len(candidates)
+
+
+def pick_recent_node(interface: Any, heard_window_seconds: int) -> tuple[dict[str, Any] | None, float | None, int]:
+    local_num = getattr(getattr(interface, "localNode", None), "nodeNum", None)
+    nodes_by_num = getattr(interface, "nodesByNum", {})
+    if not isinstance(nodes_by_num, dict):
+        return None, None, 0
+    return pick_recent_node_from_nodes(
+        nodes_by_num.values(),
+        heard_window_seconds=heard_window_seconds,
+        local_node_num=local_num,
+    )
 
 
 def resolve_mesh_partition_key(interface: Any, fallback_host: str) -> str:

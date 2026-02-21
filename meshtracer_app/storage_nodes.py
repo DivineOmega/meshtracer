@@ -94,6 +94,49 @@ class NodeRepository(StoreRepositoryBase):
     def upsert_node(self, mesh_host: str, node: dict[str, Any]) -> None:
         self.upsert_nodes(mesh_host, [node])
 
+    def list_nodes_for_traceroute(self, mesh_host: str) -> list[dict[str, Any]]:
+        host = str(mesh_host or "").strip()
+        if not host:
+            return []
+
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT node_num, node_id, long_name, short_name, last_heard
+                FROM nodes
+                WHERE mesh_host = ?
+                ORDER BY node_num ASC
+                """,
+                (host,),
+            ).fetchall()
+
+        nodes: list[dict[str, Any]] = []
+        for row in rows:
+            node_num = self._to_int(row["node_num"])
+            if node_num is None:
+                continue
+            node_id = row["node_id"]
+            long_name = row["long_name"]
+            short_name = row["short_name"]
+            user: dict[str, Any] = {}
+            if node_id is not None:
+                user["id"] = node_id
+            if long_name is not None:
+                user["longName"] = long_name
+            if short_name is not None:
+                user["shortName"] = short_name
+
+            node: dict[str, Any] = {
+                "num": node_num,
+                "lastHeard": self._to_float(row["last_heard"]),
+            }
+            if node_id is not None:
+                node["id"] = node_id
+            if user:
+                node["user"] = user
+            nodes.append(node)
+        return nodes
+
     def upsert_node_telemetry(
         self,
         mesh_host: str,

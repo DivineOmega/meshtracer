@@ -6,7 +6,7 @@ from typing import Any
 
 from .common import age_str, utc_now
 from .controller_defaults import DEFAULT_RUNTIME_CONFIG
-from .meshtastic_helpers import node_display, node_record_from_node, pick_recent_node
+from .meshtastic_helpers import node_display, node_record_from_node, pick_recent_node_from_nodes
 from .state import MapState
 from .webhook import post_webhook
 
@@ -101,9 +101,12 @@ class ControllerWorkerMixin:
                     wake_event.clear()
                 continue
             else:
-                target, last_heard_age, candidate_count = pick_recent_node(
-                    interface,
+                local_node_num = getattr(getattr(interface, "localNode", None), "nodeNum", None)
+                db_nodes = self._store.list_nodes_for_traceroute(queue_mesh_host) if queue_mesh_host else []
+                target, last_heard_age, candidate_count = pick_recent_node_from_nodes(
+                    db_nodes,
                     heard_window_seconds=heard_window_seconds,
+                    local_node_num=local_node_num,
                 )
 
             if target is None:

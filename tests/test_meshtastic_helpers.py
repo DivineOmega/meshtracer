@@ -3,7 +3,11 @@ from __future__ import annotations
 import time
 import unittest
 
-from meshtracer_app.meshtastic_helpers import pick_recent_node, resolve_mesh_partition_key
+from meshtracer_app.meshtastic_helpers import (
+    pick_recent_node,
+    pick_recent_node_from_nodes,
+    resolve_mesh_partition_key,
+)
 
 
 class _DummyLocalNode:
@@ -22,6 +26,23 @@ class _DummyInterface:
 
 
 class MeshtasticHelpersTests(unittest.TestCase):
+    def test_pick_recent_node_from_nodes_excludes_local_node(self) -> None:
+        now = time.time()
+        nodes = [
+            {"num": 7, "lastHeard": now - 10},
+            {"num": 8, "lastHeard": now - 10},
+        ]
+
+        node, _age, count = pick_recent_node_from_nodes(
+            nodes,
+            heard_window_seconds=3600,
+            local_node_num=7,
+        )
+
+        self.assertEqual(count, 1)
+        self.assertIsNotNone(node)
+        self.assertEqual(node.get("num"), 8)
+
     def test_pick_recent_node_ignores_bad_last_heard_values(self) -> None:
         now = time.time()
         interface = _DummyInterface(

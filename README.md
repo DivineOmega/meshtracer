@@ -141,7 +141,7 @@ Runtime config key `traceroute_behavior`:
 
 - `automatic`:
   - Runs on interval.
-  - Chooses one random eligible node heard within `heard_window`.
+  - Chooses one random eligible node from persisted DB node records heard within `heard_window`.
   - Excludes local node.
 - `manual`:
   - Does not run scheduled random traces.

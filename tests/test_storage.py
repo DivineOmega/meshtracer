@@ -143,6 +143,35 @@ class SQLiteStoreTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_list_nodes_for_traceroute_returns_interface_like_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                store.upsert_node(
+                    "node:shape",
+                    {
+                        "num": 22,
+                        "id": "!node22",
+                        "long_name": "Node Twenty Two",
+                        "short_name": "N22",
+                        "last_heard": 12345,
+                    },
+                )
+
+                rows = store.list_nodes_for_traceroute("node:shape")
+                self.assertEqual(len(rows), 1)
+                row = rows[0]
+                self.assertEqual(row.get("num"), 22)
+                self.assertEqual(row.get("id"), "!node22")
+                self.assertEqual(row.get("lastHeard"), 12345.0)
+                user = row.get("user") or {}
+                self.assertEqual(user.get("id"), "!node22")
+                self.assertEqual(user.get("longName"), "Node Twenty Two")
+                self.assertEqual(user.get("shortName"), "N22")
+            finally:
+                store.close()
+
     def test_nodes_table_hw_model_column_migrates_for_existing_db(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"

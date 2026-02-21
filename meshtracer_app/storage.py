@@ -186,6 +186,9 @@ class SQLiteStore:
     def upsert_node(self, mesh_host: str, node: dict[str, Any]) -> None:
         self._node_repo.upsert_node(mesh_host, node)
 
+    def list_nodes_for_traceroute(self, mesh_host: str) -> list[dict[str, Any]]:
+        return self._node_repo.list_nodes_for_traceroute(mesh_host)
+
     def upsert_node_telemetry(
         self,
         mesh_host: str,
