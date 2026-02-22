@@ -1,4 +1,6 @@
-# meshtracer
+# Meshtracer
+
+[![Unit Tests](https://github.com/Jord-JD/meshtracer/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/Jord-JD/meshtracer/actions/workflows/unit-tests.yml)
 
 Meshtracer connects to a Meshtastic node over TCP (WiFi/Ethernet) or BLE (Bluetooth LE), stores mesh history in SQLite, and serves a live web UI for map/traceroute/telemetry/chat workflows.
 
