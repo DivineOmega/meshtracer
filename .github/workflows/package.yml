@@ -167,7 +167,7 @@ jobs:
               urllib.request.urlretrieve(tool_url, tool)
               tool.chmod(0o755)
 
-              subprocess.check_call([str(tool), "--appimage-extract"])
+              subprocess.check_call([str(tool.resolve()), "--appimage-extract"])
               appimage_path = out_dir / f"meshtracer-{version}-{artifact_os}-{artifact_arch}.AppImage"
               subprocess.check_call(["./squashfs-root/AppRun", str(appdir), str(appimage_path)])
               appimage_path.chmod(0o755)
