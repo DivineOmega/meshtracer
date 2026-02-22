@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 import threading
 import time
 import webbrowser
+from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from .cli import parse_args
 from .common import utc_now
@@ -125,6 +127,30 @@ def _browser_open_url(map_host: str, map_port: int) -> str:
     return f"http://{host}:{int(map_port)}/"
 
 
+@contextmanager
+def _browser_launch_env() -> Iterator[None]:
+    # PyInstaller one-file binaries on Linux override LD_LIBRARY_PATH.
+    # Restore the system value while launching the browser opener so tools
+    # like xdg-open/kde-open can resolve their own system libstdc++.
+    if not (sys.platform.startswith("linux") and getattr(sys, "frozen", False)):
+        yield
+        return
+
+    previous_ld_library_path = os.environ.get("LD_LIBRARY_PATH")
+    original_ld_library_path = os.environ.get("LD_LIBRARY_PATH_ORIG")
+    try:
+        if original_ld_library_path:
+            os.environ["LD_LIBRARY_PATH"] = original_ld_library_path
+        else:
+            os.environ.pop("LD_LIBRARY_PATH", None)
+        yield
+    finally:
+        if previous_ld_library_path is None:
+            os.environ.pop("LD_LIBRARY_PATH", None)
+        else:
+            os.environ["LD_LIBRARY_PATH"] = previous_ld_library_path
+
+
 def main() -> int:
     args = parse_args()
     log_buffer = RuntimeLogBuffer(max_entries=3000)
@@ -210,7 +236,13 @@ def main() -> int:
             emit(f"[{utc_now()}] Web UI listening at {url}")
             if not args.no_open:
                 try:
-                    webbrowser.open(url, new=2)
+                    with _browser_launch_env():
+                        opened = webbrowser.open(url, new=2)
+                    if not opened:
+                        emit_error(
+                            f"[{utc_now()}] Warning: no browser handler accepted auto-open; "
+                            f"open {url} manually."
+                        )
                 except Exception as exc:
                     emit_error(f"[{utc_now()}] Warning: failed to open browser: {exc}")
 
