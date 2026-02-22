@@ -57,6 +57,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install \
+            backports.tarfile \
             pyinstaller==${{ env.PYINSTALLER_VERSION }} \
             pyinstaller-hooks-contrib==${{ env.PYINSTALLER_HOOKS_VERSION }}
 
@@ -78,6 +79,9 @@ jobs:
           pyinstaller --noconfirm --clean --onefile \
             --name meshtracer \
             --collect-submodules meshtastic \
+            --collect-submodules backports \
+            --hidden-import backports \
+            --hidden-import backports.tarfile \
             --add-data "$ADD_DATA" \
             meshtracer.py
 
