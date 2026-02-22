@@ -17,7 +17,7 @@ env:
   PYTHON_VERSION: "3.11"
   PYINSTALLER_VERSION: "6.11.1"
   PYINSTALLER_HOOKS_VERSION: "2025.1"
-  APPIMAGETOOL_VERSION: "13"
+  APPIMAGETOOL_VERSION: "continuous"
 
 jobs:
   build:
@@ -32,7 +32,7 @@ jobs:
           - os: windows-latest
             artifact_os: windows
             artifact_arch: x86_64
-          - os: macos-13
+          - os: macos-15-intel
             artifact_os: macos
             artifact_arch: x86_64
           - os: macos-14
