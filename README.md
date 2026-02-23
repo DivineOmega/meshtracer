@@ -1,6 +1,7 @@
 # Meshtracer
 
 [![Unit Tests](https://github.com/Jord-JD/meshtracer/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/Jord-JD/meshtracer/actions/workflows/unit-tests.yml)
+[![Latest Release](https://img.shields.io/github/v/release/Jord-JD/meshtracer?display_name=release)](https://github.com/Jord-JD/meshtracer/releases/latest)
 
 Meshtracer connects to a Meshtastic node over TCP (WiFi/Ethernet) or BLE (Bluetooth LE), stores mesh history in SQLite, and serves a live web UI for map/traceroute/telemetry/chat workflows.
 
@@ -11,7 +12,7 @@ Default web UI address: `http://127.0.0.1:8090/`
 Use this path if you just want to run Meshtracer. You do not need Python or git.
 
 1. Open the latest release page:
-   `https://github.com/Jord-JD/meshtracer/releases/latest`
+   [https://github.com/Jord-JD/meshtracer/releases/latest](https://github.com/Jord-JD/meshtracer/releases/latest)
 2. Download the asset for your platform:
    - Windows 64-bit: `meshtracer-<version>-windows-x86_64.zip`
    - macOS Intel: `meshtracer-<version>-macos-x86_64.zip`
