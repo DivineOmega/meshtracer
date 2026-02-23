@@ -59,14 +59,32 @@ Run Meshtracer:
 
 After startup, open `http://127.0.0.1:8090/`.
 
-Optional startup arguments:
+Common startup arguments (all optional):
 
-```bash
-<meshtracer-command> <NODE_IP_OR_HOST>
-<meshtracer-command> ble://<BLE_IDENTIFIER_OR_ADDRESS>
-<meshtracer-command> --map-host 0.0.0.0 --map-port 8090 --no-open
-<meshtracer-command> <NODE_IP_OR_HOST> --map-host 0.0.0.0 --map-port 8090 --no-open
-```
+- `<NODE_IP_OR_HOST>`: auto-connect to a Meshtastic node over TCP at startup.
+- `ble://<BLE_IDENTIFIER_OR_ADDRESS>`: auto-connect to a Meshtastic node over BLE at startup.
+- `--map-host 0.0.0.0`: make the web UI reachable from other devices on your LAN.
+- `--map-port <PORT>`: change the web UI port (default is `8090`).
+- `--no-open`: do not auto-open a browser window on startup.
+
+Common examples:
+
+- Start and auto-connect over TCP:
+  ```bash
+  <meshtracer-command> <NODE_IP_OR_HOST>
+  ```
+- Start and auto-connect over BLE:
+  ```bash
+  <meshtracer-command> ble://<BLE_IDENTIFIER_OR_ADDRESS>
+  ```
+- Start with LAN-accessible UI:
+  ```bash
+  <meshtracer-command> --map-host 0.0.0.0 --map-port 8090 --no-open
+  ```
+- Start with LAN-accessible UI and auto-connect over TCP:
+  ```bash
+  <meshtracer-command> <NODE_IP_OR_HOST> --map-host 0.0.0.0 --map-port 8090 --no-open
+  ```
 
 `<meshtracer-command>` examples:
 - Windows: `.\meshtracer.exe`
