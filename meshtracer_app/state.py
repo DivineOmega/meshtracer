@@ -5,6 +5,7 @@ from collections import deque
 from typing import Any
 
 from .common import utc_now
+from .location_estimator import estimate_node_positions
 from .meshtastic_helpers import node_summary_from_node, node_summary_from_num
 from .storage import SQLiteStore
 
@@ -419,8 +420,11 @@ class MapState:
 
     def snapshot(self) -> dict[str, Any]:
         nodes, traces = self._store.snapshot(mesh_host=self._mesh_host)
+        estimated_nodes = estimate_node_positions(nodes, traces)
 
-        nodes_by_num = {int(node["num"]): node for node in nodes if node.get("num") is not None}
+        nodes_by_num = {
+            int(node["num"]): node for node in estimated_nodes if node.get("num") is not None
+        }
         edges: list[dict[str, Any]] = []
 
         def append_edges(trace: dict[str, Any], nums: list[int], direction: str) -> None:
@@ -452,9 +456,9 @@ class MapState:
             "generated_at_utc": utc_now(),
             "mesh_host": self._mesh_host,
             "map_revision": self.revision(),
-            "node_count": len(nodes),
+            "node_count": len(estimated_nodes),
             "trace_count": len(traces),
-            "nodes": nodes,
+            "nodes": estimated_nodes,
             "traces": traces,
             "edges": edges,
             "logs": self._log_buffer.tail(limit=500) if self._log_buffer is not None else [],
