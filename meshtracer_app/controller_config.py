@@ -137,6 +137,10 @@ class ControllerConfigMixin:
         if traceroute_behavior is not None:
             update["traceroute_behavior"] = traceroute_behavior
 
+        traceroute_visual_style = pick_any_str("traceroute_visual_style")
+        if traceroute_visual_style is not None:
+            update["traceroute_visual_style"] = traceroute_visual_style
+
         return update
 
     @staticmethod
@@ -204,6 +208,19 @@ class ControllerConfigMixin:
                 raise ValueError("traceroute_behavior must be 'automatic' or 'manual'")
             return text
 
+        def pick_visual_style(name: str) -> str | None:
+            if name not in update:
+                return None
+            value = update.get(name)
+            if value is None:
+                return None
+            text = str(value).strip().lower()
+            if not text:
+                return None
+            if text not in ("direction", "signal"):
+                raise ValueError("traceroute_visual_style must be 'direction' or 'signal'")
+            return text
+
         def pick_bool(name: str) -> bool | None:
             if name not in update:
                 return None
@@ -223,6 +240,7 @@ class ControllerConfigMixin:
 
         try:
             traceroute_behavior = pick_behavior("traceroute_behavior")
+            traceroute_visual_style = pick_visual_style("traceroute_visual_style")
             interval = pick_float("interval")
             heard_window = pick_int("heard_window")
             fresh_window = pick_int("fresh_window")
@@ -267,6 +285,8 @@ class ControllerConfigMixin:
         new_config = dict(current)
         if traceroute_behavior is not None:
             new_config["traceroute_behavior"] = traceroute_behavior
+        if traceroute_visual_style is not None:
+            new_config["traceroute_visual_style"] = traceroute_visual_style
         if interval is not None:
             new_config["interval"] = interval
         if heard_window is not None:
@@ -354,6 +374,10 @@ class ControllerConfigMixin:
         traceroute_behavior = str(
             new_config.get("traceroute_behavior") or DEFAULT_RUNTIME_CONFIG["traceroute_behavior"]
         )
+        traceroute_visual_style = str(
+            new_config.get("traceroute_visual_style")
+            or DEFAULT_RUNTIME_CONFIG["traceroute_visual_style"]
+        )
         interval_minutes = float(new_config.get("interval") or DEFAULT_RUNTIME_CONFIG["interval"])
         traceroute_retention_hours = int(
             new_config.get("traceroute_retention_hours")
@@ -361,6 +385,7 @@ class ControllerConfigMixin:
         )
         self._emit(
             f"[{utc_now()}] Config updated: traceroute_behavior={traceroute_behavior} "
+            f"traceroute_visual_style={traceroute_visual_style} "
             f"interval={interval_minutes:g}m "
             f"heard_window={new_config['heard_window']}m hop_limit={new_config['hop_limit']} "
             f"fresh_window={new_config['fresh_window']}m mid_window={new_config['mid_window']}m "

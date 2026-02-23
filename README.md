@@ -236,6 +236,7 @@ Queue details:
 Persisted config keys:
 
 - `traceroute_behavior` (`automatic` or `manual`)
+- `traceroute_visual_style` (`direction` or `signal`)
 - `interval`
 - `heard_window`
 - `fresh_window`
@@ -255,6 +256,7 @@ Validation rules:
 - `hop_limit > 0`
 - `traceroute_retention_hours > 0`
 - `traceroute_behavior` must be `automatic` or `manual`
+- `traceroute_visual_style` must be `direction` or `signal`
 
 Security note:
 

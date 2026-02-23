@@ -5,6 +5,7 @@ from typing import Any
 
 DEFAULT_RUNTIME_CONFIG: dict[str, Any] = {
     "traceroute_behavior": "automatic",
+    "traceroute_visual_style": "direction",
     "interval": 5,
     "heard_window": 120,
     "fresh_window": 120,

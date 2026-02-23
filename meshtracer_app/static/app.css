@@ -1645,12 +1645,93 @@ body.sidebar-resizing {
   font-size: 10px;
   margin-right: 6px;
 }
+.trace-visual-style {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.trace-visual-style-label {
+  color: #9ab0d8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+}
+.trace-visual-style-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.trace-visual-style-select {
+  min-width: 178px;
+  border: 1px solid #2f4570;
+  background: #122245;
+  color: #e6efff;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.trace-visual-style-select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.trace-visual-style-status {
+  color: #b5c5e4;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.trace-visual-style-status.error {
+  color: #ff9e9e;
+}
 .trace-path {
   margin-top: 8px;
   border: 1px solid #2a3f64;
   border-radius: 9px;
   background: #0d1730;
   padding: 8px;
+}
+.trace-legend {
+  margin-top: 8px;
+  border: 1px solid #2a3f64;
+  border-radius: 9px;
+  background: #0d1730;
+  padding: 8px;
+}
+.trace-legend-title {
+  display: block;
+  font-size: 11px;
+  color: #9ab0d8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.trace-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.trace-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #29406a;
+  border-radius: 999px;
+  background: #122245;
+  padding: 2px 8px;
+  color: #d8e3fb;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.trace-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(9, 12, 20, 0.45);
+  background: var(--swatch-color, #8fa7d0);
+  flex: 0 0 auto;
 }
 .trace-path-title {
   display: block;
@@ -1666,6 +1747,19 @@ body.sidebar-resizing {
   line-height: 1.35;
   white-space: normal;
   word-break: break-word;
+}
+.trace-path-node {
+  color: #d8e3fb;
+}
+.trace-path-arrow {
+  color: var(--trace-arrow-color, #9ab0d8);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: help;
+}
+.trace-path-arrow.unknown {
+  color: #9ab0d8;
+  opacity: 0.9;
 }
 .trace-actions {
   margin-top: 10px;

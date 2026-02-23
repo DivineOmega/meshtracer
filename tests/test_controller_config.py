@@ -136,6 +136,33 @@ class ControllerConfigAndRequestTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_set_config_validates_traceroute_visual_style(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "test.db"
+            store = SQLiteStore(str(db_path))
+            try:
+                controller = MeshTracerController(
+                    args=_args(db_path=str(db_path)),
+                    store=store,
+                    log_buffer=RuntimeLogBuffer(),
+                    emit=lambda _message: None,
+                    emit_error=lambda _message: None,
+                )
+
+                ok, detail = controller.set_config({"traceroute_visual_style": "signal"})
+                self.assertTrue(ok, detail)
+                self.assertEqual(controller.get_config().get("traceroute_visual_style"), "signal")
+
+                persisted = store.get_runtime_config("global") or {}
+                self.assertEqual(persisted.get("traceroute_visual_style"), "signal")
+
+                ok, detail = controller.set_config({"traceroute_visual_style": "invalid"})
+                self.assertFalse(ok)
+                self.assertIn("traceroute_visual_style", detail)
+                self.assertEqual(controller.get_config().get("traceroute_visual_style"), "signal")
+            finally:
+                store.close()
+
     def test_chat_notification_settings_are_config_backed_and_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "test.db"
@@ -209,6 +236,7 @@ class ControllerConfigAndRequestTests(unittest.TestCase):
                 )
                 self.assertAlmostEqual(float(controller.get_config().get("interval") or 0.0), 5.0, places=3)
                 self.assertEqual(controller.get_config().get("traceroute_behavior"), "automatic")
+                self.assertEqual(controller.get_config().get("traceroute_visual_style"), "direction")
                 self.assertEqual(controller.get_config().get("traceroute_retention_hours"), 720)
 
                 ok, detail = controller.set_config({"interval": 0.5})

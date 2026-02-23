@@ -52,6 +52,7 @@
     const discoveryMeta = document.getElementById("discoveryMeta");
     const discoveryList = document.getElementById("discoveryList");
     const cfgTracerouteBehavior = document.getElementById("cfgTracerouteBehavior");
+    const cfgTracerouteVisualStyle = document.getElementById("cfgTracerouteVisualStyle");
     const cfgInterval = document.getElementById("cfgInterval");
     const cfgHeardWindow = document.getElementById("cfgHeardWindow");
     const cfgFreshWindow = document.getElementById("cfgFreshWindow");
@@ -179,14 +180,26 @@
       const msg = reason && reason.message ? String(reason.message) : String(reason || "unhandled promise rejection");
       reportClientError(msg, { prefix: "UI error" });
     });
-    const ROUTE_COLORS = {
+    const ROUTE_DIRECTION_COLORS = {
       towards: "#f59e0b",
       back: "#3b82f6",
     };
-    const ROUTE_SELECTED_COLORS = {
+    const ROUTE_DIRECTION_SELECTED_COLORS = {
       towards: "#ffd27a",
       back: "#7fb5ff",
     };
+    const ROUTE_SIGNAL_COLORS = {
+      good: "#30c047",
+      fair: "#ffb300",
+      bad: "#ff3b30",
+    };
+    const ROUTE_SIGNAL_SELECTED_COLORS = {
+      good: "#4edb64",
+      fair: "#ffd166",
+      bad: "#ff7a72",
+    };
+    const ROUTE_SNR_GOOD_THRESHOLD = -7;
+    const ROUTE_SNR_FAIR_THRESHOLD = -15;
     const ROUTE_OFFSET_MIN_METERS = 20;
     const ROUTE_OFFSET_MAX_METERS = 320;
     const ROUTE_OFFSET_SCALE = 0.055;
@@ -1621,11 +1634,17 @@
       return maxSeq;
     }
 
+    function normalizeTracerouteVisualStyle(rawValue) {
+      const value = String(rawValue ?? "").trim().toLowerCase();
+      return value === "signal" ? "signal" : "direction";
+    }
+
     function mapStyleSignatureOf(data) {
       const config = data && typeof data.config === "object" ? data.config : {};
       const fresh = numericRevision(config.fresh_window, 0);
       const mid = numericRevision(config.mid_window, 0);
-      return `${fresh}:${mid}`;
+      const visualStyle = normalizeTracerouteVisualStyle(config.traceroute_visual_style);
+      return `${fresh}:${mid}:${visualStyle}`;
     }
 
     function tracerouteControlFromData(data) {
@@ -2174,20 +2193,74 @@
       return coords;
     }
 
+    function routeLabelFromNum(rawNum) {
+      const num = Number(rawNum);
+      const node = state.nodeByNum.get(num);
+      if (node) return nodeLabel(node);
+      if (Number.isFinite(num)) {
+        const shortFallback = shortNameFromNodeNum(num);
+        if (shortFallback) return shortFallback;
+        return String(num);
+      }
+      return "?";
+    }
+
+    function formatSnrDbForTooltip(rawValue) {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value)) return null;
+      const normalized = Object.is(value, -0) ? 0 : value;
+      return `${normalized} dB SNR`;
+    }
+
     function routeToLabelPath(routeNums) {
       const route = Array.isArray(routeNums) ? routeNums : [];
       if (!route.length) return "-";
-      return route.map((rawNum) => {
-        const num = Number(rawNum);
-        const node = state.nodeByNum.get(num);
-        if (node) return nodeLabel(node);
-        if (Number.isFinite(num)) {
-          const shortFallback = shortNameFromNodeNum(num);
-          if (shortFallback) return shortFallback;
-          return String(num);
-        }
-        return "?";
-      }).join(" -> ");
+      return route.map((rawNum) => routeLabelFromNum(rawNum)).join(" -> ");
+    }
+
+    function routeToLabelPathHtml(routeNums, snrList) {
+      const route = Array.isArray(routeNums) ? routeNums : [];
+      if (!route.length) return "-";
+
+      const parts = [];
+      for (let i = 0; i < route.length; i += 1) {
+        parts.push(`<span class="trace-path-node">${escapeHtml(routeLabelFromNum(route[i]))}</span>`);
+        if (i >= route.length - 1) continue;
+
+        const snrDb = segmentSnrDb(route, snrList, i);
+        const quality = signalQualityFromSnrDb(snrDb);
+        const tooltip = formatSnrDbForTooltip(snrDb) || "SNR unavailable";
+        const arrowColor = quality ? ROUTE_SIGNAL_COLORS[quality] : "#9ab0d8";
+        parts.push(
+          `<span class="trace-path-arrow${quality ? "" : " unknown"}" style="--trace-arrow-color:${arrowColor};" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}">-&gt;</span>`
+        );
+      }
+      return parts.join(" ");
+    }
+
+    function tracerouteLegendHtml(visualStyle) {
+      if (visualStyle === "signal") {
+        return `
+          <div class="trace-legend">
+            <span class="trace-legend-title">Line Colors (Signal Strength)</span>
+            <div class="trace-legend-items">
+              <span class="trace-legend-item"><span class="trace-legend-swatch" style="--swatch-color: ${ROUTE_SIGNAL_COLORS.good};"></span>Good (&gt; -7 dB)</span>
+              <span class="trace-legend-item"><span class="trace-legend-swatch" style="--swatch-color: ${ROUTE_SIGNAL_COLORS.fair};"></span>Fair (-15 to -7 dB)</span>
+              <span class="trace-legend-item"><span class="trace-legend-swatch" style="--swatch-color: ${ROUTE_SIGNAL_COLORS.bad};"></span>Bad (&lt;= -15 dB)</span>
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="trace-legend">
+          <span class="trace-legend-title">Line Colors (Direction)</span>
+          <div class="trace-legend-items">
+            <span class="trace-legend-item"><span class="trace-legend-swatch" style="--swatch-color: ${ROUTE_DIRECTION_COLORS.towards};"></span>Outgoing Path</span>
+            <span class="trace-legend-item"><span class="trace-legend-swatch" style="--swatch-color: ${ROUTE_DIRECTION_COLORS.back};"></span>Return Path</span>
+          </div>
+        </div>
+      `;
     }
 
     function drawableSegmentCount(routeNums) {
@@ -2286,6 +2359,15 @@
         const backHops = Math.max(0, backNums.length - 1);
         const towardsDrawable = drawableSegmentCount(towardsNums);
         const backDrawable = drawableSegmentCount(backNums);
+        const tracerouteVisualStyle = normalizeTracerouteVisualStyle(
+          state.lastServerData && state.lastServerData.config && state.lastServerData.config.traceroute_visual_style
+        );
+        const towardsTitle = tracerouteVisualStyle === "signal"
+          ? "Outgoing Path (per-leg color by SNR)"
+          : "Outgoing Path";
+        const backTitle = tracerouteVisualStyle === "signal"
+          ? "Return Path (per-leg color by SNR)"
+          : "Return Path";
         const towardsSummary =
           towardsDrawable < towardsHops
             ? `${towardsHops} hops, ${towardsDrawable} drawable segments`
@@ -2302,15 +2384,79 @@
           <span class="trace-meta-row"><span class="trace-label">Route</span>${escapeHtml(originLabel)} -> ${escapeHtml(targetLabel)}</span>
           <span class="trace-meta-row"><span class="trace-label">Towards</span>${escapeHtml(towardsSummary)}</span>
           <span class="trace-meta-row"><span class="trace-label">Return</span>${escapeHtml(backSummary)}</span>
+          <div class="trace-visual-style">
+            <label class="trace-visual-style-label" for="traceVisualStyleSelect">Traceroute Visual Style</label>
+            <div class="trace-visual-style-controls">
+              <select id="traceVisualStyleSelect" class="trace-visual-style-select">
+                <option value="direction"${tracerouteVisualStyle === "direction" ? " selected" : ""}>By Direction</option>
+                <option value="signal"${tracerouteVisualStyle === "signal" ? " selected" : ""}>By Signal Strength (SNR)</option>
+              </select>
+              <span id="traceVisualStyleStatus" class="trace-visual-style-status"></span>
+            </div>
+          </div>
+          ${tracerouteLegendHtml(tracerouteVisualStyle)}
           <div class="trace-path">
-            <span class="trace-path-title">Outgoing Path (orange)</span>
-            <div class="trace-path-value">${escapeHtml(routeToLabelPath(towardsNums))}</div>
+            <span class="trace-path-title">${escapeHtml(towardsTitle)}</span>
+            <div class="trace-path-value">${routeToLabelPathHtml(towardsNums, trace.towards_snr_db)}</div>
           </div>
           <div class="trace-path">
-            <span class="trace-path-title">Return Path (blue)</span>
-            <div class="trace-path-value">${escapeHtml(routeToLabelPath(backNums))}</div>
+            <span class="trace-path-title">${escapeHtml(backTitle)}</span>
+            <div class="trace-path-value">${routeToLabelPathHtml(backNums, trace.back_snr_db)}</div>
           </div>
         `;
+        const traceVisualStyleSelect = traceDetailsBody.querySelector("#traceVisualStyleSelect");
+        const traceVisualStyleStatus = traceDetailsBody.querySelector("#traceVisualStyleStatus");
+        const setTraceVisualStyleStatus = (message, options = {}) => {
+          if (!traceVisualStyleStatus) return;
+          traceVisualStyleStatus.textContent = String(message || "");
+          traceVisualStyleStatus.classList.toggle("error", Boolean(options.error));
+        };
+        if (traceVisualStyleSelect) {
+          traceVisualStyleSelect.addEventListener("change", async () => {
+            const selectedStyle = normalizeTracerouteVisualStyle(traceVisualStyleSelect.value);
+            const currentStyle = normalizeTracerouteVisualStyle(
+              state.lastServerData && state.lastServerData.config && state.lastServerData.config.traceroute_visual_style
+            );
+            if (selectedStyle === currentStyle) {
+              setTraceVisualStyleStatus("");
+              return;
+            }
+            traceVisualStyleSelect.disabled = true;
+            setTraceVisualStyleStatus("Applying...");
+            try {
+              const { ok, body } = await apiPost("/api/config", { traceroute_visual_style: selectedStyle });
+              if (!ok) {
+                const detail = body && (body.detail || body.error)
+                  ? String(body.detail || body.error)
+                  : "failed to update traceroute visual style";
+                traceVisualStyleSelect.value = currentStyle;
+                setTraceVisualStyleStatus(detail, { error: true });
+                return;
+              }
+              if (state.lastServerData && typeof state.lastServerData === "object") {
+                const config = body && typeof body.config === "object"
+                  ? body.config
+                  : {
+                    ...(state.lastServerData.config && typeof state.lastServerData.config === "object"
+                      ? state.lastServerData.config
+                      : {}),
+                    traceroute_visual_style: selectedStyle,
+                  };
+                state.lastServerData = {
+                  ...state.lastServerData,
+                  config,
+                };
+              }
+              redrawFromLastServerData({ forceMap: true });
+              refresh();
+            } catch (e) {
+              traceVisualStyleSelect.value = currentStyle;
+              setTraceVisualStyleStatus(String(e || "failed to update traceroute visual style"), { error: true });
+            } finally {
+              traceVisualStyleSelect.disabled = false;
+            }
+          });
+        }
         traceDetails.classList.remove("hidden");
         positionChatModal();
         return;
@@ -2829,18 +2975,56 @@
       focusNode(nodeNum, { switchToNodesTab: true, scrollNodeListIntoView: true, panZoom: false });
     }
 
+    function segmentSnrDb(routeNums, snrList, index) {
+      if (!Array.isArray(routeNums) || !Array.isArray(snrList)) return NaN;
+      if (snrList.length === routeNums.length) {
+        const raw = index + 1 < snrList.length ? snrList[index + 1] : snrList[index];
+        const value = Number(raw);
+        return Number.isFinite(value) ? value : NaN;
+      }
+      if (snrList.length === routeNums.length - 1) {
+        const value = Number(snrList[index]);
+        return Number.isFinite(value) ? value : NaN;
+      }
+      return NaN;
+    }
+
+    function signalQualityFromSnrDb(snrDb) {
+      const value = Number(snrDb);
+      if (!Number.isFinite(value)) return null;
+      if (value > ROUTE_SNR_GOOD_THRESHOLD) return "good";
+      if (value > ROUTE_SNR_FAIR_THRESHOLD) return "fair";
+      return "bad";
+    }
+
+    function routeSegmentColors(direction, visualStyle, routeNums, snrList, index) {
+      if (visualStyle === "signal") {
+        const quality = signalQualityFromSnrDb(segmentSnrDb(routeNums, snrList, index));
+        if (quality) {
+          return {
+            baseColor: ROUTE_SIGNAL_COLORS[quality],
+            selectedColor: ROUTE_SIGNAL_SELECTED_COLORS[quality],
+          };
+        }
+      }
+      return {
+        baseColor: ROUTE_DIRECTION_COLORS[direction],
+        selectedColor: ROUTE_DIRECTION_SELECTED_COLORS[direction],
+      };
+    }
+
     function applyTraceSelectionVisual() {
       const hasSelection = state.selectedTraceId !== null;
       for (const [traceId, polylines] of state.edgePolylinesByTrace.entries()) {
         for (const line of polylines) {
           const direction = line.options.meshDirection === "back" ? "back" : "towards";
-          const baseColor = ROUTE_COLORS[direction];
+          const baseColor = String(line.options.meshBaseColor || ROUTE_DIRECTION_COLORS[direction]);
+          const selectedColor = String(line.options.meshSelectedColor || baseColor);
           if (!hasSelection) {
             line.setStyle({ color: baseColor, weight: 3, opacity: 0.5 });
             continue;
           }
           if (traceId === state.selectedTraceId) {
-            const selectedColor = ROUTE_SELECTED_COLORS[direction];
             line.setStyle({ color: selectedColor, weight: 6, opacity: 0.98 });
           } else {
             // Hide non-selected traceroute lines entirely while a trace is selected.
@@ -2916,11 +3100,13 @@
       }
     }
 
-    function addTracePathSegments(traceId, routeNums, direction) {
+    function addTracePathSegments(traceId, routeNums, direction, options = {}) {
       let count = 0;
       const route = Array.isArray(routeNums) ? routeNums : [];
       if (route.length < 2) return count;
       const directionSign = direction === "back" ? -1 : 1;
+      const snrList = Array.isArray(options.snrList) ? options.snrList : null;
+      const visualStyle = normalizeTracerouteVisualStyle(options.visualStyle);
 
       for (let i = 0; i < route.length - 1; i += 1) {
         const src = state.nodeByNum.get(Number(route[i]));
@@ -2936,12 +3122,14 @@
         const segmentOffset = directionSign * (baseOffset + jitter);
 
         const pathPoints = offsetSegment(src.lat, src.lon, dst.lat, dst.lon, segmentOffset);
-        const color = ROUTE_COLORS[direction];
+        const colors = routeSegmentColors(direction, visualStyle, route, snrList, i);
         const polyline = L.polyline(pathPoints, {
-          color,
+          color: colors.baseColor,
           weight: 3,
           opacity: 0.55,
           meshDirection: direction,
+          meshBaseColor: colors.baseColor,
+          meshSelectedColor: colors.selectedColor,
         }).addTo(edgeLayer);
         if (!state.edgePolylinesByTrace.has(traceId)) {
           state.edgePolylinesByTrace.set(traceId, []);
@@ -3029,11 +3217,20 @@
         expandSpiderGroup(previousSpiderKey);
       }
 
+      const tracerouteVisualStyle = normalizeTracerouteVisualStyle(
+        data && data.config && data.config.traceroute_visual_style
+      );
       for (const trace of data.traces || []) {
         const traceId = Number(trace.trace_id);
         if (!Number.isFinite(traceId)) continue;
-        addTracePathSegments(traceId, trace.towards_nums || [], "towards");
-        addTracePathSegments(traceId, trace.back_nums || [], "back");
+        addTracePathSegments(traceId, trace.towards_nums || [], "towards", {
+          snrList: trace.towards_snr_db,
+          visualStyle: tracerouteVisualStyle,
+        });
+        addTracePathSegments(traceId, trace.back_nums || [], "back", {
+          snrList: trace.back_snr_db,
+          visualStyle: tracerouteVisualStyle,
+        });
       }
 
       const viewData = {
@@ -3405,6 +3602,9 @@
         const behavior = String(config.traceroute_behavior ?? "automatic").trim().toLowerCase();
         cfgTracerouteBehavior.value = behavior === "automatic" ? "automatic" : "manual";
       }
+      if (cfgTracerouteVisualStyle) {
+        cfgTracerouteVisualStyle.value = normalizeTracerouteVisualStyle(config.traceroute_visual_style);
+      }
       setIntervalSelectValue(config.interval ?? 5);
       if (cfgHeardWindow) cfgHeardWindow.value = String(config.heard_window ?? "");
       if (cfgFreshWindow) cfgFreshWindow.value = String(config.fresh_window ?? "");
@@ -3476,6 +3676,7 @@
 
       const payload = {
         traceroute_behavior: String(cfgTracerouteBehavior?.value || "automatic").trim().toLowerCase(),
+        traceroute_visual_style: normalizeTracerouteVisualStyle(cfgTracerouteVisualStyle?.value),
         interval: asFloat(cfgInterval?.value, 5),
         heard_window: asInt(cfgHeardWindow?.value, 120),
         fresh_window: asInt(cfgFreshWindow?.value, 120),
@@ -3516,6 +3717,7 @@
     function resetConfig() {
       const defaults = state.configDefaults || {
         traceroute_behavior: "automatic",
+        traceroute_visual_style: "direction",
         interval: 5,
         heard_window: 120,
         fresh_window: 120,
@@ -3575,6 +3777,12 @@
         body: `Manual: Meshtracer only runs traceroutes you queue from the node details panel.
 
 Automatic: Meshtracer continuously selects eligible recent nodes and runs traceroutes on an interval.`,
+      },
+      traceroute_visual_style: {
+        title: "Traceroute Visual Style",
+        body: `By Direction: Uses fixed colors for outbound and return paths.
+
+By Signal Strength (SNR): Colors each traceroute leg by signal quality using Meshtastic Android SNR cutoffs: Good > -7 dB, Fair > -15 dB, otherwise Bad.`,
       },
       interval: {
         title: "Interval / Timeout Basis",
@@ -3777,6 +3985,7 @@ Sent as both an Authorization: Bearer token and X-API-Token header. Leave blank 
     }
     for (const el of [
       cfgTracerouteBehavior,
+      cfgTracerouteVisualStyle,
       cfgInterval,
       cfgHeardWindow,
       cfgFreshWindow,
