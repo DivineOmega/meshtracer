@@ -6,14 +6,86 @@ Meshtracer connects to a Meshtastic node over TCP (WiFi/Ethernet) or BLE (Blueto
 
 Default web UI address: `http://127.0.0.1:8090/`
 
-## Quick Requirements
+## Quick Start (Release Build - Recommended)
+
+Use this path if you just want to run Meshtracer. You do not need Python or git.
+
+1. Open the latest release page:
+   `https://github.com/Jord-JD/meshtracer/releases/latest`
+2. Download the asset for your platform:
+   - Windows 64-bit: `meshtracer-<version>-windows-x86_64.zip`
+   - macOS Intel: `meshtracer-<version>-macos-x86_64.zip`
+   - macOS Apple Silicon: `meshtracer-<version>-macos-arm64.zip`
+   - Linux x86_64: `meshtracer-<version>-linux-x86_64.AppImage`
+   - Checksums: `SHA256SUMS.txt`
+
+Linux release builds are currently `x86_64` only.
+
+Optional: verify checksums before running.
+
+- Linux:
+  ```bash
+  sha256sum -c SHA256SUMS.txt
+  ```
+- macOS:
+  ```bash
+  shasum -a 256 -c SHA256SUMS.txt
+  ```
+- Windows (PowerShell):
+  ```powershell
+  Get-FileHash .\meshtracer-<version>-windows-x86_64.zip -Algorithm SHA256
+  ```
+  Compare the hash output with the matching line in `SHA256SUMS.txt`.
+
+Run Meshtracer:
+
+- Windows:
+  1. Extract `meshtracer-<version>-windows-x86_64.zip`
+  2. Run `.\meshtracer.exe` (PowerShell) or double-click `meshtracer.exe`
+- macOS:
+  1. Extract `meshtracer-<version>-macos-<arch>.zip`
+  2. Run:
+     ```bash
+     chmod +x ./meshtracer
+     ./meshtracer
+     ```
+- Linux:
+  1. Run:
+     ```bash
+     chmod +x ./meshtracer-<version>-linux-x86_64.AppImage
+     ./meshtracer-<version>-linux-x86_64.AppImage
+     ```
+
+After startup, open `http://127.0.0.1:8090/`.
+
+Optional startup arguments:
+
+```bash
+<meshtracer-command> <NODE_IP_OR_HOST>
+<meshtracer-command> ble://<BLE_IDENTIFIER_OR_ADDRESS>
+<meshtracer-command> --map-host 0.0.0.0 --map-port 8090 --no-open
+<meshtracer-command> <NODE_IP_OR_HOST> --map-host 0.0.0.0 --map-port 8090 --no-open
+```
+
+`<meshtracer-command>` examples:
+- Windows: `.\meshtracer.exe`
+- macOS: `./meshtracer`
+- Linux: `./meshtracer-<version>-linux-x86_64.AppImage`
+
+If you use `--map-host 0.0.0.0`, open `http://<THIS_MACHINE_LAN_IP>:8090/` from other devices on the same LAN.
+
+Stop with `Ctrl+C`.
+
+## Quick Start (From Source / Development)
+
+Use this path if you want to develop or modify Meshtracer.
+
+Requirements:
 
 - Python `3.10+`
 - `git`
-- Meshtastic node reachable by IP/hostname over TCP, or reachable over BLE.
 - Python dependencies from `requirements.txt` (currently pins `meshtastic==2.7.7`).
-
-## Quick Start
+- Meshtastic node reachable by IP/hostname over TCP, or reachable over BLE (only needed when you want to connect).
 
 Clone + install:
 
@@ -25,39 +97,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Start locally (UI bound to localhost):
+Run from source:
 
 ```bash
-source .venv/bin/activate && python meshtracer.py
+source .venv/bin/activate
+python meshtracer.py
 ```
-
-Start locally with startup auto-connect to a Meshtastic node:
-
-```bash
-source .venv/bin/activate && python meshtracer.py <NODE_IP_OR_HOST>
-```
-
-Start locally and connect over BLE:
-
-```bash
-source .venv/bin/activate && python meshtracer.py ble://<BLE_IDENTIFIER_OR_ADDRESS>
-```
-
-Host UI for access from other devices on your LAN:
-
-```bash
-source .venv/bin/activate && python meshtracer.py --map-host 0.0.0.0 --map-port 8090 --no-open
-```
-
-Then open `http://<THIS_MACHINE_LAN_IP>:8090/` from another device on the same network.
-
-Host UI on LAN and auto-connect to a Meshtastic node:
-
-```bash
-source .venv/bin/activate && python meshtracer.py <NODE_IP_OR_HOST> --map-host 0.0.0.0 --map-port 8090 --no-open
-```
-
-Stop with `Ctrl+C`.
 
 ## Capabilities
 
@@ -91,6 +136,18 @@ Stop with `Ctrl+C`.
 - Realtime updates over SSE with polling fallback.
 
 ## CLI Reference
+
+```bash
+meshtracer [host] [options]
+```
+
+If the binary is not on your `PATH`, run it directly from the extracted folder:
+
+- Windows: `.\meshtracer.exe [host] [options]`
+- macOS: `./meshtracer [host] [options]`
+- Linux: `./meshtracer-<version>-linux-x86_64.AppImage [host] [options]`
+
+When running from source instead of a release binary:
 
 ```bash
 python meshtracer.py [host] [options]
